@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="foam" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#fefefe" />
+      <stop offset="100%" stop-color="#e7effa" />
+    </linearGradient>
+    <linearGradient id="beer" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#f7c948" />
+      <stop offset="100%" stop-color="#f08a24" />
+    </linearGradient>
+  </defs>
+  <rect x="52" y="40" width="152" height="60" rx="24" fill="url(#foam)" />
+  <rect x="72" y="80" width="112" height="140" rx="30" fill="url(#beer)" />
+  <rect x="72" y="140" width="112" height="80" rx="30" opacity="0.35" fill="#fefefe" />
+  <circle cx="102" cy="122" r="10" fill="#fff6d1" opacity="0.7" />
+  <circle cx="132" cy="162" r="12" fill="#fff2b8" opacity="0.55" />
+</svg>

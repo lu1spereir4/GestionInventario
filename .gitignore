@@ -1,0 +1,4 @@
+node_modules/
+dist/
+inventory-sync.db*
+*.log
