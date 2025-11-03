@@ -3,7 +3,7 @@ import { io } from "socket.io-client";
 import "./App.css";
 import SalesList from "./components/SalesList";
 import SummaryCard from "./components/SummaryCard";
-import VariablePriceModal from "./components/VariablePriceModal";
+import VariablePriceModal from "./components/VariablePriceModel";
 import ConnectionStatus from "./components/ConnectionStatus";
 import ScannerToggle from "./components/ScannerToggle";
 import ProductImageManager from "./components/ProductImageManager";

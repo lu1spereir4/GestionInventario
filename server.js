@@ -28,8 +28,8 @@ const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
     origin: '*',
-    methods: ['GET', 'POST']
-  }
+    methods: ['GET', 'POST'],
+  },
 });
 
 const IMAGE_DIR = path.join(process.cwd(), 'public', 'images');
@@ -52,9 +52,7 @@ const upload = multer({
     }
     cb(null, true);
   },
-  limits: {
-    fileSize: 2 * 1024 * 1024, // 2 MB
-  },
+  limits: { fileSize: 4 * 1024 * 1024 },
 });
 
 app.use(cors());
@@ -63,7 +61,6 @@ app.use('/images', express.static(IMAGE_DIR));
 
 let syncing = false;
 let pendingVariablePriceScan = null;
-const todaySales = [];
 const productCache = new Map();
 
 function buildImageUrl(imagePath) {
@@ -71,19 +68,43 @@ function buildImageUrl(imagePath) {
   if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
     return imagePath;
   }
-  const normalized = imagePath.replace(/^[\\/]+/, '').replace(/\\/g, '/');
-  return `/${normalized}`;
+  const cleaned = imagePath
+    .replace(/\\/g, '/')
+    .replace(/^(\.\/)+/, '')
+    .replace(/^public\//, '')
+    .replace(/^\/+/, '');
+  return `/${cleaned}`;
+}
+
+function cacheProduct(product) {
+  if (!product?.barcode) return;
+  productCache.set(product.barcode, product);
 }
 
 function getCachedProduct(barcode) {
+  if (!barcode) return null;
   if (productCache.has(barcode)) {
     return productCache.get(barcode);
   }
   const product = getProductByBarcode(barcode);
   if (product) {
-    productCache.set(barcode, product);
+    cacheProduct(product);
   }
-  return product;
+  return product || null;
+}
+
+function isVariablePricing(source) {
+  if (!source) return false;
+  const values = [
+    source.pricingMode,
+    source.pricing_mode,
+    source.category,
+    source.productName,
+    source.name,
+  ]
+    .filter(Boolean)
+    .map((value) => value.toString().toLowerCase());
+  return values.includes('varios') || values.includes('variable');
 }
 
 function mapProductToDto(product) {
@@ -96,7 +117,59 @@ function mapProductToDto(product) {
     defaultPriceCents: product.default_price_cents ?? null,
     sourceType: product.source_type ?? product.sourceType,
     active: product.active === 0 ? false : true,
-    imageUrl: buildImageUrl(product.image_path ?? null),
+    imageUrl: buildImageUrl(product.image_path ?? product.imagePath),
+  };
+}
+
+function mapScanToClient(scan, product = null) {
+  const productData = product || getCachedProduct(scan.barcode) || {};
+  const priceCandidate =
+    scan.priceCents ??
+    scan.price_cents ??
+    productData.default_price_cents ??
+    productData.defaultPriceCents ??
+    null;
+
+  return {
+    id: scan.id,
+    barcode: scan.barcode,
+    productName:
+      scan.productName ||
+      scan.product_name ||
+      productData.name ||
+      scan.barcode,
+    category: scan.category || productData.category || null,
+    pricingMode:
+      scan.pricingMode ||
+      scan.pricing_mode ||
+      productData.pricing_mode ||
+      productData.pricingMode ||
+      null,
+    priceCents:
+      typeof priceCandidate === 'number' ? priceCandidate : null,
+    quantity: scan.quantity || 1,
+    scannedAt: scan.scannedAt || scan.scanned_at || new Date().toISOString(),
+    status: scan.status || 'pending',
+    imageUrl:
+      scan.imageUrl ||
+      buildImageUrl(scan.image_path || productData.image_path || productData.imagePath),
+  };
+}
+
+function buildPendingVariableScan(scan, product = null, overrides = {}) {
+  const enriched = mapScanToClient(
+    {
+      ...scan,
+      status: 'pending',
+    },
+    product,
+  );
+
+  return {
+    ...enriched,
+    pricingMode: enriched.pricingMode || 'variable',
+    priceCents: null,
+    ...overrides,
   };
 }
 
@@ -104,9 +177,11 @@ async function loadProductCatalog() {
   const endpoint = config.catalogEndpoint || '/products';
   const base = config.apiBase.replace(/\/$/, '');
   const catalogUrl = endpoint.startsWith('http') ? endpoint : `${base}${endpoint}`;
+
   try {
     const headers = {};
     if (config.jwt) headers.Authorization = `Bearer ${config.jwt}`;
+
     const { data } = await axios.get(catalogUrl, { headers, timeout: 5000 });
     if (!Array.isArray(data)) {
       console.warn('Catálogo recibido en formato inesperado');
@@ -117,7 +192,8 @@ async function loadProductCatalog() {
       .filter((item) => item && item.barcode)
       .map((item) => {
         const rawPrice = item.defaultPriceCents ?? item.default_price_cents ?? null;
-        const defaultPriceCents = rawPrice == null ? null : Math.round(Number(rawPrice) * 1000);
+        const defaultPriceCents =
+          rawPrice == null ? null : Math.round(Number(rawPrice) * 1000);
 
         return {
           barcode: item.barcode,
@@ -138,54 +214,239 @@ async function loadProductCatalog() {
     productCache.clear();
     for (const product of normalized) {
       const stored = getProductByBarcode(product.barcode);
-      if (stored) productCache.set(product.barcode, stored);
+      if (stored) cacheProduct(stored);
     }
-    io.emit('products-refreshed', listProducts().map(mapProductToDto));
-    console.log(`📦 Catálogo actualizado: ${normalized.length} productos.`);
+
+    const catalogDto = listProducts().map(mapProductToDto);
+    io.emit('products-refreshed', catalogDto);
+    console.log(`Catálogo actualizado con ${normalized.length} productos.`);
   } catch (error) {
     console.error('Error cargando catálogo:', error.message);
   }
 }
 
-// Middleware para logs
-app.use((req, res, next) => {
+function persistAccepted(ids, payloadScans) {
+  const lines = payloadScans
+    .filter((scan) => ids.includes(scan.id))
+    .map((scan) =>
+      JSON.stringify({
+        ...scan,
+        syncedAt: new Date().toISOString(),
+      }),
+    );
+
+  if (lines.length === 0) return;
+
+  fs.appendFileSync('./synced.log', `${lines.join('\n')}\n`);
+}
+
+function persistRejected(reject) {
+  fs.appendFileSync(
+    './rejected.log',
+    `${new Date().toISOString()} ${reject.id} ${reject.reason || 'unknown'}\n`,
+  );
+}
+
+function enqueueVariablePrice(scanRow, product = null, overrides = {}) {
+  const pending = buildPendingVariableScan(scanRow, product, overrides);
+  pendingVariablePriceScan = pending;
+  io.emit('variable-price-required', pending);
+}
+
+function addScan(rawBarcode, source = 'stdin') {
+  const barcode = (rawBarcode || '').trim();
+  if (!barcode) return;
+
+  const now = new Date().toISOString();
+  const product = getCachedProduct(barcode);
+  const pricingMode = product?.pricing_mode ?? product?.pricingMode ?? null;
+  const category = product?.category ?? null;
+  const productName = product?.name ?? null;
+  const imagePath = product?.image_path ?? product?.imagePath ?? null;
+  const defaultPrice =
+    typeof product?.default_price_cents === 'number'
+      ? product.default_price_cents
+      : typeof product?.defaultPriceCents === 'number'
+      ? product.defaultPriceCents
+      : null;
+  const variable = isVariablePricing({
+    pricingMode,
+    category,
+    productName,
+  });
+
+  const scanRecord = {
+    id: uuid(),
+    barcode,
+    deviceId: config.deviceId,
+    scannedAt: now,
+    productName,
+    category,
+    priceCents: variable ? null : defaultPrice,
+    imagePath,
+  };
+
+  saveScan(scanRecord);
+  io.emit('scan-received', { id: scanRecord.id, barcode });
+  console.log(`Lectura registrada (${source}): ${barcode}`);
+
+  if (variable && !pendingVariablePriceScan) {
+    enqueueVariablePrice(
+      {
+        id: scanRecord.id,
+        barcode,
+        device_id: scanRecord.deviceId,
+        scanned_at: now,
+        product_name: productName,
+        category,
+        image_path: imagePath,
+      },
+      product,
+    );
+  } else {
+    triggerSync();
+  }
+}
+
+async function triggerSync() {
+  if (syncing) return;
+
+  const pending = getPendingScans();
+  if (pending.length === 0) return;
+
+  const payloadScans = [];
+
+  for (const scan of pending) {
+    const product = getCachedProduct(scan.barcode);
+    const pricingMode =
+      scan.pricing_mode ||
+      scan.pricingMode ||
+      product?.pricing_mode ||
+      product?.pricingMode;
+    const category = scan.category || product?.category || null;
+    const productName = scan.product_name || product?.name || null;
+    const priceCents =
+      typeof scan.price_cents === 'number'
+        ? scan.price_cents
+        : typeof product?.default_price_cents === 'number'
+        ? product.default_price_cents
+        : typeof product?.defaultPriceCents === 'number'
+        ? product.defaultPriceCents
+        : null;
+    const isVariable = isVariablePricing({
+      pricingMode,
+      category,
+      productName,
+    });
+    const needsPrice = isVariable && (!priceCents || priceCents <= 0);
+
+    if (needsPrice) {
+      if (!pendingVariablePriceScan || pendingVariablePriceScan.id !== scan.id) {
+        enqueueVariablePrice(scan, product);
+        console.log(`Precio variable requerido para ${scan.barcode}`);
+      }
+      continue;
+    }
+
+    const payload = {
+      id: scan.id,
+      barcode: scan.barcode,
+      deviceId: scan.device_id,
+      scannedAt: scan.scanned_at,
+    };
+
+    if (isVariable && priceCents) {
+      payload.variablePriceCents = priceCents;
+    }
+
+    payloadScans.push(payload);
+  }
+
+  if (!payloadScans.length) {
+    return;
+  }
+
+  const headers = { 'Content-Type': 'application/json' };
+  if (config.jwt) headers.Authorization = `Bearer ${config.jwt}`;
+
+  syncing = true;
+  try {
+    const apiBase = config.apiBase.replace(/\/$/, '');
+    const { data } = await axios.post(
+      `${apiBase}/scans/bulk`,
+      { scans: payloadScans },
+      { headers, timeout: 5000 },
+    );
+
+    const accepted = new Set(data.acceptedIds || []);
+    const rejected = data.rejected || [];
+    const variablePriceRequired = data.variablePriceRequired || [];
+
+    if (accepted.size) {
+      markAsSynced([...accepted], new Date().toISOString());
+      persistAccepted([...accepted], payloadScans);
+
+      for (const id of accepted) {
+        const scan = pending.find((item) => item.id === id);
+        if (!scan) continue;
+        const sale = mapScanToClient({ ...scan, status: 'synced' });
+        io.emit('sale-completed', sale);
+      }
+    }
+
+    for (const item of variablePriceRequired) {
+      const scan = pending.find((entry) => entry.id === item.id);
+      if (!scan) continue;
+      enqueueVariablePrice(scan, getCachedProduct(scan.barcode), {
+        productName: item.productName || scan.product_name,
+        category: item.category || scan.category,
+      });
+    }
+
+    for (const rej of rejected) {
+      markAsRejected(rej.id);
+      persistRejected(rej);
+      io.emit('sale-rejected', {
+        id: rej.id,
+        reason: rej.reason || 'Rechazado por backend',
+      });
+    }
+  } catch (error) {
+    const message = error.response?.data?.error || error.message;
+    console.error('Error sincronizando:', message);
+    io.emit('sync-error', { message });
+  } finally {
+    syncing = false;
+  }
+}
+
+app.use((req, _res, next) => {
   console.log(`${req.method} ${req.path}`);
   next();
 });
 
-// Endpoint para obtener ventas del día
-app.get('/api/sales/today', (req, res) => {
+app.get('/api/sales/today', (_req, res) => {
   const sales = getTodaySales();
   const summary = {
     totalItems: sales.reduce((sum, s) => sum + (s.quantity || 1), 0),
     totalCents: sales.reduce((sum, s) => sum + (s.price_cents || 0), 0),
-    sales: sales.map((s) => {
-      const product = getCachedProduct(s.barcode);
-      return {
-        id: s.id,
-        barcode: s.barcode,
-        productName: s.product_name || product?.name || 'Producto desconocido',
-        category: s.category || product?.category || null,
-        priceCents: s.price_cents ?? product?.default_price_cents ?? null,
-        quantity: s.quantity || 1,
-        scannedAt: s.scanned_at,
-        status: s.status,
-        imageUrl: buildImageUrl(s.image_path || product?.image_path),
-      };
-    }),
+    sales: sales.map((s) => mapScanToClient(s)),
   };
   res.json(summary);
 });
 
-// Endpoint para obtener scan pendiente de precio variable
-app.get('/api/pending-variable-price', (req, res) => {
+app.get('/api/pending-variable-price', (_req, res) => {
   res.json(pendingVariablePriceScan || null);
 });
 
-// Endpoint para recibir códigos de barras vía HTTP (alternativa al stdin)
 app.get('/api/products', (_req, res) => {
   const products = listProducts().map(mapProductToDto);
   res.json(products);
+});
+
+app.post('/api/products/refresh', async (_req, res) => {
+  await loadProductCatalog();
+  res.json({ success: true });
 });
 
 app.post('/api/products/:barcode/image', upload.single('image'), (req, res, next) => {
@@ -203,7 +464,7 @@ app.post('/api/products/:barcode/image', upload.single('image'), (req, res, next
 
     const relativePath = path.join('images', req.file.filename).replace(/\\/g, '/');
     updateProductImage(barcode, relativePath);
-    productCache.set(barcode, getProductByBarcode(barcode));
+    cacheProduct(getProductByBarcode(barcode));
 
     const dto = mapProductToDto(productCache.get(barcode));
     io.emit('product-updated', dto);
@@ -212,22 +473,20 @@ app.post('/api/products/:barcode/image', upload.single('image'), (req, res, next
     next(error);
   }
 });
+
 app.post('/api/scan', (req, res) => {
-  const { barcode } = req.body;
-  
+  const { barcode } = req.body || {};
   if (!barcode || typeof barcode !== 'string' || barcode.trim().length === 0) {
     return res.status(400).json({ error: 'Código de barras inválido' });
   }
 
-  console.log(`📥 Código recibido vía HTTP: ${barcode}`);
-  addScan(barcode.trim());
+  addScan(barcode, 'http');
   res.json({ success: true, barcode: barcode.trim() });
 });
 
-// Endpoint para enviar precio variable
 app.post('/api/set-variable-price', async (req, res) => {
-  const { scanId, priceCents } = req.body;
-  
+  const { scanId, priceCents } = req.body || {};
+
   if (!scanId || typeof priceCents !== 'number' || priceCents <= 0) {
     return res.status(400).json({ error: 'scanId y priceCents válidos requeridos' });
   }
@@ -237,307 +496,154 @@ app.post('/api/set-variable-price', async (req, res) => {
   }
 
   try {
-    // Enviar el precio al backend
     const headers = { 'Content-Type': 'application/json' };
     if (config.jwt) headers.Authorization = `Bearer ${config.jwt}`;
+    const apiBase = config.apiBase.replace(/\/$/, '');
+    const variable = isVariablePricing(pendingVariablePriceScan);
 
-    const payload = {
-      scans: [{
-        id: pendingVariablePriceScan.id,
-        barcode: pendingVariablePriceScan.barcode,
-        deviceId: pendingVariablePriceScan.deviceId,
-        scannedAt: pendingVariablePriceScan.scannedAt,
-        variablePriceCents: priceCents
-      }]
-    };
+    if (variable) {
+      await axios.post(
+        `${apiBase}/sales/varios`,
+        {
+          priceCents,
+          quantity: pendingVariablePriceScan.quantity || 1,
+          deviceId: config.deviceId,
+        },
+        { headers, timeout: 5000 },
+      );
 
-    const { data } = await axios.post(
-      `${config.apiBase}/scans/bulk`,
-      payload,
-      { headers, timeout: 5000 }
-    );
-
-    const accepted = new Set(data.acceptedIds || []);
-    const rejected = data.rejected || [];
-
-        if (accepted.has(scanId)) {
-      const syncedAt = new Date().toISOString();
-      markAsSynced([scanId], syncedAt);
+      markAsSynced([scanId], new Date().toISOString());
       updateScanPrice(scanId, priceCents);
-      const product = getCachedProduct(pendingVariablePriceScan.barcode);
 
-      const sale = {
-        ...pendingVariablePriceScan,
-        productName: pendingVariablePriceScan.productName || product?.name || 'Producto desconocido',
-        category: pendingVariablePriceScan.category || product?.category || 'varios',
-        priceCents,
-        status: 'synced',
-        imageUrl: pendingVariablePriceScan.imageUrl || buildImageUrl(product?.image_path),
-      };
+      const product = getCachedProduct(pendingVariablePriceScan.barcode);
+      const sale = mapScanToClient(
+        {
+          ...pendingVariablePriceScan,
+          priceCents,
+          status: 'synced',
+        },
+        product,
+      );
 
       io.emit('sale-completed', sale);
-      console.log(`?? Venta con precio variable: ${(priceCents / 100).toFixed(2)}`);
-
       pendingVariablePriceScan = null;
       res.json({ success: true, sale });
-    } else {
-      const rejection = rejected.find(r => r.id === scanId);
-      markAsRejected(scanId);
-      pendingVariablePriceScan = null;
-      res.status(400).json({ error: rejection?.reason || 'Rechazado por el servidor' });
+      triggerSync();
+      return;
     }
-  } catch (error) {
-    console.error('Error enviando precio variable:', error.message);
-    res.status(500).json({ error: error.message });
-  }
-});
 
-// Función para procesar escaneo
-function addScan(barcode) {
-  const product = getCachedProduct(barcode);
-  const pricingMode = product?.pricing_mode ?? product?.pricingMode;
-  const priceForFixed = pricingMode === 'fixed' ? (product?.default_price_cents ?? null) : null;
-  const imagePath = product?.image_path ?? null;
-
-  const scan = {
-    id: uuid(),
-    barcode,
-    deviceId: config.deviceId,
-    scannedAt: new Date().toISOString(),
-    productName: product?.name ?? null,
-    category: product?.category ?? null,
-    priceCents: priceForFixed,
-    imagePath,
-  };
-
-  saveScan(scan);
-  console.log(`\n?? Lectura registrada: ${barcode}`);
-  console.log(`   ID: ${scan.id}`);
-  console.log(`   Timestamp: ${scan.scannedAt}\n`);
-
-  console.log('?? Emitiendo evento "scan-received" al frontend...');
-  io.emit('scan-received', { ...scan, imageUrl: buildImageUrl(imagePath) });
-
-  console.log('?? Iniciando sincronizaci�n con backend...');
-  triggerSync();
-}
-
-async function triggerSync() {
-  if (syncing) {
-    console.log('⏳ Sincronización ya en curso, esperando...');
-    return;
-  }
-  const pending = getPendingScans();
-  if (pending.length === 0) {
-    console.log('✓ No hay scans pendientes de sincronizar');
-    return;
-  }
-
-  console.log(`📤 Sincronizando ${pending.length} scan(s) pendiente(s)...`);
-  syncing = true;
-  try {
     const payload = {
-      scans: pending.map((scan) => ({
-        id: scan.id,
-        barcode: scan.barcode,
-        deviceId: scan.device_id,
-        scannedAt: scan.scanned_at,
-      })),
+      scans: [
+        {
+          id: pendingVariablePriceScan.id,
+          barcode: pendingVariablePriceScan.barcode,
+          deviceId: config.deviceId,
+          scannedAt: pendingVariablePriceScan.scannedAt,
+          variablePriceCents: priceCents,
+        },
+      ],
     };
 
-    const headers = { 'Content-Type': 'application/json' };
-    if (config.jwt) headers.Authorization = `Bearer ${config.jwt}`;
-
     const { data } = await axios.post(
-      `${config.apiBase}/scans/bulk`,
+      `${apiBase}/scans/bulk`,
       payload,
       { headers, timeout: 5000 },
     );
 
-    // 🔍 LOG DETALLADO DE LA RESPUESTA DEL BACKEND
-    console.log('📡 Respuesta del backend:', JSON.stringify(data, null, 2));
-
     const accepted = new Set(data.acceptedIds || []);
     const rejected = data.rejected || [];
-    const variablePriceRequired = data.variablePriceRequired || [];    if (accepted.size) {
-      const syncedAt = new Date().toISOString();
-      markAsSynced([...accepted], syncedAt);
-      persistAccepted([...accepted], pending);
-      console.log(`?? Enviados: ${accepted.size}`);
 
-      for (const id of accepted) {
-        const scan = pending.find((s) => s.id === id);
-        if (!scan) continue;
+    if (accepted.has(scanId)) {
+      markAsSynced([scanId], new Date().toISOString());
+      updateScanPrice(scanId, priceCents);
 
-        const product = getCachedProduct(scan.barcode);
-        const imagePath = scan.image_path || product?.image_path || null;
-        const computedPrice =
-          scan.price_cents ?? product?.default_price_cents ?? null;
-
-        if (computedPrice != null && scan.price_cents == null) {
-          updateScanPrice(scan.id, computedPrice);
-        }
-
-        io.emit('sale-completed', {
-          id: scan.id,
-          barcode: scan.barcode,
-          productName: scan.product_name || product?.name || 'Producto desconocido',
-          category: scan.category || product?.category || 'varios',
-          priceCents: computedPrice,
-          quantity: scan.quantity || 1,
-          scannedAt: scan.scanned_at,
+      const sale = mapScanToClient(
+        {
+          ...pendingVariablePriceScan,
+          priceCents,
           status: 'synced',
-          imageUrl: buildImageUrl(imagePath),
-        });
-      }
+        },
+        getCachedProduct(pendingVariablePriceScan.barcode),
+      );
+
+      io.emit('sale-completed', sale);
+      pendingVariablePriceScan = null;
+      res.json({ success: true, sale });
+      triggerSync();
+      return;
     }
 
-    // Manejar productos' que requieren precio variable
-    for (const item of variablePriceRequired) {
-      const scan = pending.find((s) => s.id === item.id);
-      if (scan) {
-        const product = getCachedProduct(scan.barcode);
-                pendingVariablePriceScan = {
-          id: scan.id,
-          barcode: scan.barcode,
-          deviceId: scan.device_id,
-          scannedAt: scan.scanned_at,
-          productName: product?.name || item.productName || 'Varios',
-          category: product?.category || item.category || 'varios',
-          imageUrl: buildImageUrl(product?.image_path || scan.image_path),
-        };
-        
-        io.emit('variable-price-required', pendingVariablePriceScan);
-        console.log(`⚠️  Precio variable requerido para: ${pendingVariablePriceScan.productName}`);
-      }
+    const rejection = rejected.find((item) => item.id === scanId);
+    if (rejection) {
+      markAsRejected(scanId);
+      persistRejected(rejection);
+      pendingVariablePriceScan = null;
+      io.emit('sale-rejected', { id: scanId, reason: rejection.reason });
+      return res.status(502).json({ error: rejection.reason || 'Rechazado' });
     }
 
-    for (const rej of rejected) {
-      markAsRejected(rej.id);
-      persistRejected(rej);
-      console.warn(`✖ Rechazado ${rej.id}: ${rej.reason}`);
-      
-      io.emit('sale-rejected', {
-        id: rej.id,
-        reason: rej.reason
-      });
-    }
+    throw new Error('El backend no procesó el scan');
   } catch (error) {
-    console.error('Error sincronizando:', error.message);
-    io.emit('sync-error', { message: error.message });
-  } finally {
-    syncing = false;
+    const message = error.response?.data?.error || error.message;
+    console.error('Error enviando precio variable:', message);
+    return res.status(500).json({ error: message });
   }
-}
+});
 
-function persistAccepted(ids, payloadScans) {
-  const lines = payloadScans
-    .filter((scan) => ids.includes(scan.id))
-    .map((scan) => JSON.stringify({
-      ...scan,
-      syncedAt: new Date().toISOString(),
-    }));
+app.use((error, _req, res, _next) => {
+  console.error('Error en la API:', error);
+  res.status(500).json({ error: error.message || 'Error interno' });
+});
 
-  if (lines.length === 0) return;
-
-  fs.appendFileSync('./synced.log', lines.join('\n') + '\n');
-}
-
-function persistRejected(reject) {
-  fs.appendFileSync(
-    './rejected.log',
-    `${new Date().toISOString()} ${reject.id} ${reject.reason}\n`,
-  );
-}
-
-// WebSocket connection handler
 io.on('connection', (socket) => {
-  console.log('🔌 Cliente conectado:', socket.id);
-  
-  // Enviar resumen actual al conectar
+  console.log(`Cliente conectado: ${socket.id}`);
   const sales = getTodaySales();
+
   socket.emit('initial-data', {
-    sales: sales.map((s) => {
-      const product = getCachedProduct(s.barcode);
-      return {
-        id: s.id,
-        barcode: s.barcode,
-        productName: s.product_name || product?.name || 'Producto desconocido',
-        category: s.category || product?.category || null,
-        priceCents: s.price_cents ?? product?.default_price_cents ?? null,
-        quantity: s.quantity || 1,
-        scannedAt: s.scanned_at,
-        status: s.status,
-        imageUrl: buildImageUrl(s.image_path || product?.image_path),
-      };
-    }),
+    sales: sales.map((s) => mapScanToClient(s)),
     pendingVariablePrice: pendingVariablePriceScan,
     products: listProducts().map(mapProductToDto),
   });
 
   socket.on('disconnect', () => {
-    console.log('🔌 Cliente desconectado:', socket.id);
+    console.log(`Cliente desconectado: ${socket.id}`);
   });
 });
 
+function startUsbListener() {
+  const devicePath = process.env.USB_SCANNER_DEVICE;
+  if (!devicePath) {
+    console.log('USB_SCANNER_DEVICE no definido. Escáner USB deshabilitado.');
+    return;
+  }
 
-app.use((err, _req, res, _next) => {
-  console.error(`Error en la solicitud: ${err.message}`);
-  const status = err instanceof multer.MulterError ? 400 : 500;
-  res.status(status).json({ error: err.message });
-});
+  if (!fs.existsSync(devicePath)) {
+    console.warn(`El dispositivo USB ${devicePath} no existe.`);
+    return;
+  }
 
-loadProductCatalog();
-if (config.catalogRefreshMs) {
-  setInterval(loadProductCatalog, config.catalogRefreshMs);
+  const usbListener = new USBScannerListener(devicePath);
+  usbListener.on('scan', (code) => addScan(code, 'usb'));
+  usbListener.on('error', (error) => {
+    console.error('Error en el escáner USB:', error.message);
+  });
+  usbListener.start();
 }
 
-// Iniciar servidor
 const PORT = process.env.PORT || 3001;
+
 httpServer.listen(PORT, () => {
-  console.log(`
-╔═══════════════════════════════════════════╗
-║  🚀 Servidor de Inventario Iniciado      ║
-║                                           ║
-║  Puerto: ${PORT}                            ║
-║  WebSocket: Activo                        ║
-║  Escáner: Listo                          ║
-╚═══════════════════════════════════════════╝
-  `);
-  
-  // Iniciar escáner de códigos (stdin - método tradicional)
-  listen(addScan);
-  
-  // Si está en Linux y se especifica un dispositivo USB, usar listener directo
-  const usbDevice = process.env.USB_SCANNER_DEVICE;
-  if (usbDevice && process.platform === 'linux') {
-    console.log(`� Iniciando listener USB directo: ${usbDevice}`);
-    const usbListener = new USBScannerListener(usbDevice);
-    usbListener.on('scan', addScan);
-    usbListener.on('error', (err) => {
-      console.error('⚠️  Error en USB listener:', err.message);
-      console.log('💡 Continuando con método stdin...');
-    });
-    usbListener.start();
-  } else {
-    console.log('💡 Para usar USB directo, ejecuta con:');
-    console.log('   USB_SCANNER_DEVICE=/dev/input/event0 node server.js');
-  }
-  
-  console.log('');
-  
-  // Sincronización periódica
+  console.log('==========================================');
+  console.log('  Servidor de Inventario Iniciado');
+  console.log('  Puerto:', PORT);
+  console.log('  WebSocket: activo');
+  console.log('==========================================');
+
+  loadProductCatalog();
+  setInterval(loadProductCatalog, config.catalogRefreshMs);
   setInterval(triggerSync, config.syncIntervalMs);
   triggerSync();
+
+  listen((code) => addScan(code, 'stdin'));
+  startUsbListener();
 });
-
-
-
-
-
-
-
-
-
-
-
