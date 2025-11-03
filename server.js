@@ -7,6 +7,7 @@ import axios from 'axios';
 import { v4 as uuid } from 'uuid';
 import config from './sync.config.js';
 import { listen } from './barcodeScanner.js';
+import USBScannerListener from './usbScanner.js';
 import {
   saveScan,
   getPendingScans,
@@ -312,12 +313,26 @@ httpServer.listen(PORT, () => {
 ╚═══════════════════════════════════════════╝
   `);
   
-  console.log('💡 En Linux/Raspberry Pi el escáner funcionará automáticamente');
-  console.log('💡 En Windows, usa el modo manual del frontend si es necesario');
-  console.log('');
-  
-  // Iniciar escáner de códigos
+  // Iniciar escáner de códigos (stdin - método tradicional)
   listen(addScan);
+  
+  // Si está en Linux y se especifica un dispositivo USB, usar listener directo
+  const usbDevice = process.env.USB_SCANNER_DEVICE;
+  if (usbDevice && process.platform === 'linux') {
+    console.log(`� Iniciando listener USB directo: ${usbDevice}`);
+    const usbListener = new USBScannerListener(usbDevice);
+    usbListener.on('scan', addScan);
+    usbListener.on('error', (err) => {
+      console.error('⚠️  Error en USB listener:', err.message);
+      console.log('💡 Continuando con método stdin...');
+    });
+    usbListener.start();
+  } else {
+    console.log('💡 Para usar USB directo, ejecuta con:');
+    console.log('   USB_SCANNER_DEVICE=/dev/input/event0 node server.js');
+  }
+  
+  console.log('');
   
   // Sincronización periódica
   setInterval(triggerSync, config.syncIntervalMs);
