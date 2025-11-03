@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+frontend/node_modules/
+
+# Build output
+frontend/dist/
+frontend/build/
+
+# Database
+*.db
+*.db-shm
+*.db-wal
+
+# Logs
+*.log
+synced.log
+rejected.log
+
+# Environment
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Production
+frontend/.vite/

@@ -1,0 +1,99 @@
+.manual-scanner {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 12px;
+  padding: 1.5rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  margin-bottom: 1.5rem;
+  color: white;
+}
+
+.scanner-status {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  font-weight: 500;
+}
+
+.status-icon {
+  font-size: 1.5rem;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.1);
+  }
+}
+
+.status-text {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.last-scan {
+  margin-left: auto;
+  font-family: 'Courier New', monospace;
+  background: rgba(255, 255, 255, 0.2);
+  padding: 0.25rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.875rem;
+}
+
+.scanner-form {
+  display: flex;
+  gap: 0;
+}
+
+.scanner-input {
+  flex: 1;
+  padding: 1rem 1.5rem;
+  font-size: 1.125rem;
+  border: 3px solid rgba(255, 255, 255, 0.3);
+  border-radius: 8px;
+  font-family: 'Courier New', monospace;
+  background: rgba(255, 255, 255, 0.95);
+  color: #1f2937;
+  font-weight: 600;
+  transition: all 0.2s;
+  width: 100%;
+}
+
+.scanner-input:focus {
+  outline: none;
+  border-color: white;
+  background: white;
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.3);
+  transform: translateY(-2px);
+}
+
+.scanner-input::placeholder {
+  color: #9ca3af;
+  font-weight: 500;
+}
+
+@media (max-width: 768px) {
+  .manual-scanner {
+    padding: 1rem;
+  }
+
+  .scanner-status {
+    flex-wrap: wrap;
+  }
+
+  .last-scan {
+    width: 100%;
+    margin-left: 0;
+    margin-top: 0.5rem;
+  }
+
+  .scanner-input {
+    font-size: 1rem;
+    padding: 0.875rem 1rem;
+  }
+}

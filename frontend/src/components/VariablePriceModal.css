@@ -1,0 +1,235 @@
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 1rem;
+  animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.modal-content {
+  background: white;
+  border-radius: 16px;
+  max-width: 500px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  animation: slideUp 0.3s ease-out;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.5rem;
+  border-bottom: 1px solid var(--gray-200);
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--gray-900);
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  color: var(--gray-600);
+  cursor: pointer;
+  padding: 0.25rem;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.modal-close:hover {
+  background: var(--gray-100);
+  color: var(--gray-900);
+}
+
+.modal-body {
+  padding: 1.5rem;
+}
+
+.product-info {
+  background: var(--gray-50);
+  padding: 1rem;
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+}
+
+.product-name {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--gray-900);
+  margin: 0 0 0.25rem 0;
+}
+
+.product-barcode {
+  font-size: 0.875rem;
+  color: var(--gray-600);
+  margin: 0;
+  font-family: 'Courier New', monospace;
+}
+
+.price-input-group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.currency-symbol {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--gray-700);
+}
+
+.price-input {
+  flex: 1;
+  font-size: 2rem;
+  padding: 0.75rem 1rem;
+  border: 2px solid var(--gray-300);
+  border-radius: 8px;
+  font-weight: 600;
+  transition: border-color 0.2s;
+}
+
+.price-input:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.quick-prices {
+  margin-bottom: 1.5rem;
+}
+
+.quick-prices-label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--gray-600);
+  margin: 0 0 0.75rem 0;
+}
+
+.quick-prices-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+}
+
+.quick-price-btn {
+  padding: 0.75rem;
+  background: var(--gray-100);
+  border: 2px solid var(--gray-200);
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--gray-700);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.quick-price-btn:hover {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: white;
+  transform: scale(1.05);
+}
+
+.modal-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.btn {
+  padding: 1rem 1.5rem;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  min-height: 56px;
+}
+
+.btn-primary {
+  background: var(--primary);
+  color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--primary-dark);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+}
+
+.btn-primary:disabled {
+  background: var(--gray-300);
+  color: var(--gray-500);
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  background: white;
+  color: var(--gray-700);
+  border: 2px solid var(--gray-300);
+}
+
+.btn-secondary:hover {
+  background: var(--gray-50);
+  border-color: var(--gray-400);
+}
+
+@media (max-width: 768px) {
+  .modal-content {
+    max-width: 100%;
+    border-radius: 16px 16px 0 0;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    max-height: 85vh;
+  }
+
+  .quick-prices-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .modal-actions {
+    grid-template-columns: 1fr;
+  }
+}

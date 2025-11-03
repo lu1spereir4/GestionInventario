@@ -1,0 +1,64 @@
+.scanner-toggle-container {
+  margin-bottom: 1.5rem;
+}
+
+.toggle-scanner-btn {
+  background: white;
+  border: 2px dashed var(--gray-300);
+  color: var(--gray-600);
+  padding: 0.75rem 1.5rem;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  width: 100%;
+}
+
+.toggle-scanner-btn:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: var(--gray-50);
+}
+
+.scanner-wrapper {
+  background: white;
+  border-radius: 12px;
+  padding: 1rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.scanner-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.scanner-header h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--gray-800);
+}
+
+.close-scanner-btn {
+  background: none;
+  border: none;
+  color: var(--gray-500);
+  font-size: 1.5rem;
+  cursor: pointer;
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+
+.close-scanner-btn:hover {
+  background: var(--gray-100);
+  color: var(--gray-700);
+}

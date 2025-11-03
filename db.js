@@ -62,3 +62,13 @@ export function markAsRejected(id) {
   markRejectedStmt.run({ id });
 }
 
+const todaySalesStmt = db.prepare(`
+  SELECT * FROM scans
+  WHERE date(scanned_at) = date('now')
+  ORDER BY datetime(scanned_at) DESC
+`);
+
+export function getTodaySales() {
+  return todaySalesStmt.all();
+}
+
