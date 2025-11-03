@@ -2,7 +2,7 @@ import fs from 'fs';
 import { EventEmitter } from 'events';
 
 const SHIFT_CODES = new Set([42, 54]);
-const ENTER_CODE = 28;
+const ENTER_CODES = new Set([28, 96]); // 28: KEY_ENTER, 96: KEY_KPENTER
 
 const KEY_MAP = {
   2: '1',
@@ -53,6 +53,22 @@ const KEY_MAP = {
   52: '.',
   53: '/',
   57: ' ',
+  // Keypad digits (muchos escáneres USB los usan)
+  71: '7', // KEY_KP7
+  72: '8', // KEY_KP8
+  73: '9', // KEY_KP9
+  75: '4', // KEY_KP4
+  76: '5', // KEY_KP5
+  77: '6', // KEY_KP6
+  79: '1', // KEY_KP1
+  80: '2', // KEY_KP2
+  81: '3', // KEY_KP3
+  82: '0', // KEY_KP0
+  83: '.', // KEY_KPDOT
+  98: '/', // KEY_KPSLASH
+  55: '*', // KEY_KPASTERISK
+  74: '-', // KEY_KPMINUS
+  78: '+', // KEY_KPPLUS
 };
 
 const SHIFTED_KEY_MAP = {
@@ -112,6 +128,7 @@ class USBScannerListener extends EventEmitter {
     this.buffer = [];
     this.stream = null;
     this.shiftPressed = false;
+    this.flushTimer = null;
   }
 
   start() {
@@ -168,12 +185,14 @@ class USBScannerListener extends EventEmitter {
         continue;
       }
 
-      if (value !== 1) {
+      if (ENTER_CODES.has(code)) {
+        if (value === 0 || value === 1) {
+          this.flushBuffer();
+        }
         continue;
       }
 
-      if (code === ENTER_CODE) {
-        this.flushBuffer();
+      if (value !== 1) {
         continue;
       }
 
@@ -183,11 +202,17 @@ class USBScannerListener extends EventEmitter {
 
       if (char) {
         this.buffer.push(char);
+        this.scheduleFlush();
       }
     }
   }
 
   flushBuffer() {
+    if (this.flushTimer) {
+      clearTimeout(this.flushTimer);
+      this.flushTimer = null;
+    }
+
     if (this.buffer.length === 0) {
       return;
     }
@@ -201,6 +226,18 @@ class USBScannerListener extends EventEmitter {
 
     console.log(`Código escaneado (USB): ${barcode}`);
     this.emit('scan', barcode);
+  }
+
+  scheduleFlush() {
+    if (this.flushTimer) {
+      clearTimeout(this.flushTimer);
+    }
+
+    // Algunos lectores no envían Enter; hacemos flush tras breve pausa.
+    this.flushTimer = setTimeout(() => {
+      this.flushTimer = null;
+      this.flushBuffer();
+    }, 120);
   }
 }
 
