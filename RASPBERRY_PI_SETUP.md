@@ -68,16 +68,27 @@ recompilen los módulos nativos.
    /dev/input/by-id/usb-Linux_3.0.8-svn379_with_dwc2-gadget_HID_Gadget-event-kbd
    ```
 
-2. Otorga permisos al usuario que correrá el servicio (`pi`, `lu1s`, etc.):
+2. **Permiso rápido (se pierde tras reinicio)** – ideal para probar:
    ```bash
    sudo setfacl -m u:$USER:rw /dev/input/by-id/<tu-evento>
    ```
-   Para que el permiso persista tras reinicios, puedes crear una regla udev o
-   añadir al usuario al grupo `input`:
-   ```bash
-   sudo usermod -a -G input $USER
-   ```
-   (requiere cerrar sesión).
+   Si reinicias, repite el comando antes de arrancar el servicio.
+
+3. **Permiso permanente** – recomendado en producción:
+   1. Crea una regla udev `sudo nano /etc/udev/rules.d/99-barcode.rules` con:
+      ```
+      SUBSYSTEM=="input", GROUP="input", MODE="0660"
+      ```
+   2. Añade al usuario al grupo `input`:
+      ```bash
+      sudo usermod -a -G input $USER
+      ```
+   3. Recarga y aplica:
+      ```bash
+      sudo udevadm control --reload
+      sudo udevadm trigger
+      ```
+      Cierra la sesión (o reinicia) para heredar el nuevo grupo.
 
 3. Comprueba que el lector emita eventos (opcional):
    ```bash
