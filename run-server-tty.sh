@@ -32,4 +32,18 @@ echo "🚀 Iniciando servidor..."
 echo ""
 
 # Ejecutar el servidor con stdin habilitado
-exec node server.js
+cleanup() {
+    if [ -n "${SERVER_PID:-}" ]; then
+        echo ""
+        echo "Deteniendo servidor..."
+        kill "$SERVER_PID" 2>/dev/null || true
+        wait "$SERVER_PID" 2>/dev/null || true
+    fi
+    exit 0
+}
+
+trap cleanup INT TERM
+
+node server.js &
+SERVER_PID=$!
+wait "$SERVER_PID"

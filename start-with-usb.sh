@@ -61,4 +61,18 @@ echo ""
 echo "Iniciando servidor con USB_SCANNER_DEVICE=$SELECTED_DEVICE"
 echo ""
 
-USB_SCANNER_DEVICE="$SELECTED_DEVICE" exec "$NODE_BIN" server.js
+cleanup() {
+  if [ -n "${SERVER_PID:-}" ]; then
+    echo "Deteniendo servidor..."
+    kill "$SERVER_PID" 2>/dev/null || true
+    wait "$SERVER_PID" 2>/dev/null || true
+  fi
+  exit 0
+}
+
+trap cleanup INT TERM
+
+USB_SCANNER_DEVICE="$SELECTED_DEVICE" "$NODE_BIN" server.js &
+SERVER_PID=$!
+
+wait "$SERVER_PID"

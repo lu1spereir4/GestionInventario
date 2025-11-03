@@ -57,4 +57,20 @@ export NODE_ENV="${NODE_ENV:-production}"
 cd "$PROJECT_DIR"
 
 log "Iniciando servidor (Node: $NODE_BIN, USB: $USB_SCANNER_DEVICE)"
-exec "$NODE_BIN" server.js
+
+cleanup() {
+  local code=$?
+  if [ -n "${SERVER_PID:-}" ]; then
+    log "Recibida señal, deteniendo servidor (PID $SERVER_PID)..."
+    kill "$SERVER_PID" 2>/dev/null || true
+    wait "$SERVER_PID" 2>/dev/null || true
+  fi
+  exit $code
+}
+
+trap cleanup INT TERM
+
+"$NODE_BIN" server.js &
+SERVER_PID=$!
+
+wait "$SERVER_PID"
