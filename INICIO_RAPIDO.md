@@ -23,6 +23,30 @@ cd frontend
 npm run dev -- --host 0.0.0.0
 ```
 
+### Servicio en segundo plano (systemd)
+
+1. Edita las variables necesarias en `inventory-sync.service`.
+2. Copia el archivo a `/etc/systemd/system/`:
+   ```bash
+   sudo cp ~/inventory-sync/inventory-sync.service /etc/systemd/system/
+   ```
+3. Da permisos de ejecución al script de arranque:
+   ```bash
+   chmod +x ~/inventory-sync/start-inventory-service.sh
+   ```
+4. Recarga systemd y habilita el servicio:
+   ```bash
+   sudo systemctl daemon-reload
+   sudo systemctl enable inventory-sync.service
+   sudo systemctl start inventory-sync.service
+   sudo systemctl status inventory-sync.service
+   ```
+5. Inicia el frontend en otra terminal:
+   ```bash
+   cd ~/inventory-sync/frontend
+   npm run dev -- --host 0.0.0.0
+   ```
+
 **Acceder:**
 - Local: `http://localhost:5173`
 - Remoto: `http://<IP_RASPBERRY>:5173`

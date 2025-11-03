@@ -1,56 +1,64 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
+set -euo pipefail
+
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+echo "==========================================="
+echo "  Sistema de Inventario - USB directo"
+echo "==========================================="
 echo ""
-echo "╔═══════════════════════════════════════════╗"
-echo "║  Sistema de Inventario con USB Directo   ║"
-echo "╚═══════════════════════════════════════════╝"
-echo ""
 
-cd "$(dirname "$0")"
-
-# Verificar permisos root
-if [ "$EUID" -ne 0 ]; then 
-    echo "⚠️  Este script necesita permisos root para acceder al USB"
-    echo "💡 Ejecuta con: sudo ./start-with-usb.sh"
-    echo ""
-    exit 1
+if [ "$EUID" -ne 0 ]; then
+  echo "Este script necesita permisos de administrador."
+  echo "Ejecuta: sudo env \"PATH=$PATH\" ./start-with-usb.sh"
+  exit 1
 fi
 
-# Detectar dispositivos de entrada
-echo "🔍 Buscando escáner USB..."
-echo ""
+cd "$PROJECT_DIR"
 
-DEVICES=$(ls /dev/input/event* 2>/dev/null)
+# Load nvm if available so we can reach the same Node.js version used by the user.
+if [ -z "${NVM_DIR:-}" ]; then
+  if [ -d "$HOME/.nvm" ]; then
+    export NVM_DIR="$HOME/.nvm"
+  fi
+fi
+
+if [ -n "${NVM_DIR:-}" ] && [ -s "$NVM_DIR/nvm.sh" ]; then
+  # shellcheck source=/dev/null
+  . "$NVM_DIR/nvm.sh"
+  nvm use --silent >/dev/null 2>&1 || true
+fi
+
+NODE_BIN="${NODE_BIN:-$(command -v node || true)}"
+
+if [ -z "$NODE_BIN" ]; then
+  echo "Node.js no está disponible en el PATH."
+  echo "Define NODE_BIN o instala Node para el usuario root."
+  exit 1
+fi
+
+DEVICES=$(ls /dev/input/event* 2>/dev/null || true)
 
 if [ -z "$DEVICES" ]; then
-    echo "❌ No se encontraron dispositivos de entrada"
-    exit 1
+  echo "No se encontraron dispositivos en /dev/input/event*."
+  exit 1
 fi
 
-echo "Dispositivos disponibles:"
-for dev in $DEVICES; do
-    echo "  - $dev"
-done
-
+echo "Dispositivos detectados:"
+echo "$DEVICES" | sed 's/^/  - /'
 echo ""
-echo "🎯 Selecciona el dispositivo del escáner"
-echo "   (normalmente event0, event1, etc.)"
-echo ""
-read -p "Dispositivo [/dev/input/event0]: " SELECTED_DEVICE
 
-# Usar valor por defecto si no se ingresa nada
+read -r -p "Selecciona el dispositivo [/dev/input/event0]: " SELECTED_DEVICE
 SELECTED_DEVICE=${SELECTED_DEVICE:-/dev/input/event0}
 
 if [ ! -e "$SELECTED_DEVICE" ]; then
-    echo "❌ El dispositivo $SELECTED_DEVICE no existe"
-    exit 1
+  echo "El dispositivo $SELECTED_DEVICE no existe."
+  exit 1
 fi
 
 echo ""
-echo "✅ Usando dispositivo: $SELECTED_DEVICE"
-echo ""
-echo "🚀 Iniciando servidor..."
+echo "Iniciando servidor con USB_SCANNER_DEVICE=$SELECTED_DEVICE"
 echo ""
 
-# Iniciar el servidor con la variable de entorno
-USB_SCANNER_DEVICE=$SELECTED_DEVICE node server.js
+USB_SCANNER_DEVICE="$SELECTED_DEVICE" exec "$NODE_BIN" server.js
