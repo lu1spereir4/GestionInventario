@@ -22,7 +22,7 @@ function SalesList({ sales }) {
 
 function SaleItem({ sale }) {
   const formatPrice = (value) => {
-    const pesos = Math.round((value || 0) / 1000);
+    const pesos = Math.max(0, Math.round(value || 0));
     return `$${pesos.toLocaleString("es-CL")}`;
   };
 

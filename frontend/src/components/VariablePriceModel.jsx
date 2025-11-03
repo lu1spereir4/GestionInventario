@@ -19,9 +19,7 @@ function VariablePriceModal({ product, onSubmit, onCancel }) {
   }, [isVariableProduct]);
 
   useEffect(() => {
-    const defaultValue = Math.round(
-      (product.priceCents ?? product.defaultPriceCents ?? 0) / 1000
-    );
+    const defaultValue = product.priceCents ?? product.defaultPriceCents ?? 0;
     if (defaultValue > 0) {
       setPrice(String(defaultValue));
     } else {
@@ -38,7 +36,7 @@ function VariablePriceModal({ product, onSubmit, onCancel }) {
       return;
     }
 
-    const priceCents = priceInt * 1000;
+    const priceCents = priceInt;
     onSubmit(priceCents);
     setPrice("");
   };

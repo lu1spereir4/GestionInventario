@@ -192,8 +192,11 @@ async function loadProductCatalog() {
       .filter((item) => item && item.barcode)
       .map((item) => {
         const rawPrice = item.defaultPriceCents ?? item.default_price_cents ?? null;
+        const numericPrice = Number(rawPrice);
         const defaultPriceCents =
-          rawPrice == null ? null : Math.round(Number(rawPrice) * 1000);
+          rawPrice == null || Number.isNaN(numericPrice)
+            ? null
+            : Math.round(numericPrice);
 
         return {
           barcode: item.barcode,
