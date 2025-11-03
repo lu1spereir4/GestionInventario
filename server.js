@@ -117,7 +117,7 @@ async function loadProductCatalog() {
       .filter((item) => item && item.barcode)
       .map((item) => {
         const rawPrice = item.defaultPriceCents ?? item.default_price_cents ?? null;
-        const defaultPriceCents = rawPrice == null ? null : round(float(rawPrice) * 1000);
+        const defaultPriceCents = rawPrice == null ? null : Math.round(Number(rawPrice) * 1000);
 
         return {
           barcode: item.barcode,
@@ -530,6 +530,7 @@ httpServer.listen(PORT, () => {
   setInterval(triggerSync, config.syncIntervalMs);
   triggerSync();
 });
+
 
 
 
