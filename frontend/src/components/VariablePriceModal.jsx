@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+﻿import { useState, useEffect, useRef } from 'react';
 import './VariablePriceModal.css';
 
 function VariablePriceModal({ product, onSubmit, onCancel }) {
@@ -17,7 +17,7 @@ function VariablePriceModal({ product, onSubmit, onCancel }) {
     
     const priceNum = parseFloat(price);
     if (isNaN(priceNum) || priceNum <= 0) {
-      alert('Por favor ingresa un precio válido mayor a 0');
+      alert('Por favor ingresa un precio vÃ¡lido mayor a 0');
       return;
     }
 
@@ -34,16 +34,16 @@ function VariablePriceModal({ product, onSubmit, onCancel }) {
     <div className="modal-overlay" onClick={onCancel}>
       <div className="modal-content" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h2>💰 Ingresa el Precio</h2>
+          <h2>ðŸ’° Ingresa el Precio</h2>
           <button className="modal-close" onClick={onCancel}>
-            ✕
+            âœ•
           </button>
         </div>
 
         <div className="modal-body">
           <div className="product-info">
             <p className="product-name">{product.productName}</p>
-            <p className="product-barcode">Código: {product.barcode}</p>
+            <p className="product-barcode">CÃ³digo: {product.barcode}</p>
           </div>
 
           <form onSubmit={handleSubmit}>
@@ -63,7 +63,7 @@ function VariablePriceModal({ product, onSubmit, onCancel }) {
             </div>
 
             <div className="quick-prices">
-              <p className="quick-prices-label">Precios rápidos:</p>
+              <p className="quick-prices-label">Precios rÃ¡pidos:</p>
               <div className="quick-prices-grid">
                 {[0.50, 1.00, 2.00, 5.00, 10.00, 20.00].map((amount) => (
                   <button
@@ -102,3 +102,4 @@ function VariablePriceModal({ product, onSubmit, onCancel }) {
 }
 
 export default VariablePriceModal;
+

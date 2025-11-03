@@ -297,3 +297,10 @@ ISC
 ## ğŸ‘¨â€ğŸ’» Soporte
 
 Para problemas o preguntas, crear un issue en el repositorio.
+
+## Catálogo e imágenes
+
+- El backend sincroniza el catálogo desde el endpoint configurado en `sync.config.js` (`catalogEndpoint`).
+- Cuando se escanea un código, el sistema completa automáticamente nombre, categoría y precio por defecto.
+- Puedes subir imágenes para cada producto desde la interfaz (`Cargar imagen de producto`). Los archivos quedan en `public/images` y se sirven bajo `/images/...`.
+- Las imágenes y metadatos se comparten automáticamente con el dashboard vía WebSocket.

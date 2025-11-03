@@ -1,6 +1,8 @@
 import fs from 'fs';
+import path from 'path';
 import express from 'express';
 import cors from 'cors';
+import multer from 'multer';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import axios from 'axios';
@@ -14,6 +16,11 @@ import {
   markAsSynced,
   markAsRejected,
   getTodaySales,
+  upsertProducts,
+  getProductByBarcode,
+  listProducts,
+  updateProductImage,
+  updateScanPrice,
 } from './db.js';
 
 const app = express();
@@ -25,12 +32,115 @@ const io = new Server(httpServer, {
   }
 });
 
+const IMAGE_DIR = path.join(process.cwd(), 'public', 'images');
+fs.mkdirSync(IMAGE_DIR, { recursive: true });
+
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, IMAGE_DIR),
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase() || '.jpg';
+    const safeExt = ['.jpg', '.jpeg', '.png', '.webp'].includes(ext) ? ext : '.jpg';
+    cb(null, `${req.params.barcode}${safeExt}`);
+  },
+});
+
+const upload = multer({
+  storage,
+  fileFilter: (_req, file, cb) => {
+    if (!file.mimetype.startsWith('image/')) {
+      return cb(new Error('Solo se permiten archivos de imagen'));
+    }
+    cb(null, true);
+  },
+  limits: {
+    fileSize: 2 * 1024 * 1024, // 2 MB
+  },
+});
+
 app.use(cors());
 app.use(express.json());
+app.use('/images', express.static(IMAGE_DIR));
 
 let syncing = false;
 let pendingVariablePriceScan = null;
 const todaySales = [];
+const productCache = new Map();
+
+function buildImageUrl(imagePath) {
+  if (!imagePath) return null;
+  if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
+    return imagePath;
+  }
+  const normalized = imagePath.replace(/^[\\/]+/, '').replace(/\\/g, '/');
+  return `/${normalized}`;
+}
+
+function getCachedProduct(barcode) {
+  if (productCache.has(barcode)) {
+    return productCache.get(barcode);
+  }
+  const product = getProductByBarcode(barcode);
+  if (product) {
+    productCache.set(barcode, product);
+  }
+  return product;
+}
+
+function mapProductToDto(product) {
+  if (!product) return null;
+  return {
+    barcode: product.barcode,
+    name: product.name,
+    category: product.category,
+    pricingMode: product.pricing_mode ?? product.pricingMode,
+    defaultPriceCents: product.default_price_cents ?? null,
+    sourceType: product.source_type ?? product.sourceType,
+    active: product.active === 0 ? false : true,
+    imageUrl: buildImageUrl(product.image_path ?? null),
+  };
+}
+
+async function loadProductCatalog() {
+  const endpoint = config.catalogEndpoint || '/products';
+  const base = config.apiBase.replace(/\/$/, '');
+  const catalogUrl = endpoint.startsWith('http') ? endpoint : `${base}${endpoint}`;
+  try {
+    const headers = {};
+    if (config.jwt) headers.Authorization = `Bearer ${config.jwt}`;
+    const { data } = await axios.get(catalogUrl, { headers, timeout: 5000 });
+    if (!Array.isArray(data)) {
+      console.warn('Catálogo recibido en formato inesperado');
+      return;
+    }
+
+    const normalized = data
+      .filter((item) => item && item.barcode)
+      .map((item) => ({
+        barcode: item.barcode,
+        name: item.name || item.description || item.barcode,
+        category: item.category || 'varios',
+        pricingMode: item.pricingMode || item.pricing_mode || 'fixed',
+        defaultPriceCents: item.defaultPriceCents ?? item.default_price_cents ?? null,
+        sourceType: item.sourceType ?? item.source_type ?? 'compra',
+        active: item.active !== false,
+        imagePath: item.imagePath ?? item.image_path ?? null,
+        updatedAt: item.updatedAt ?? item.updated_at ?? new Date().toISOString(),
+      }));
+
+    if (!normalized.length) return;
+
+    upsertProducts(normalized);
+    productCache.clear();
+    for (const product of normalized) {
+      const stored = getProductByBarcode(product.barcode);
+      if (stored) productCache.set(product.barcode, stored);
+    }
+    io.emit('products-refreshed', listProducts().map(mapProductToDto));
+    console.log(`📦 Catálogo actualizado: ${normalized.length} productos.`);
+  } catch (error) {
+    console.error('Error cargando catálogo:', error.message);
+  }
+}
 
 // Middleware para logs
 app.use((req, res, next) => {
@@ -44,16 +154,20 @@ app.get('/api/sales/today', (req, res) => {
   const summary = {
     totalItems: sales.reduce((sum, s) => sum + (s.quantity || 1), 0),
     totalCents: sales.reduce((sum, s) => sum + (s.price_cents || 0), 0),
-    sales: sales.map(s => ({
-      id: s.id,
-      barcode: s.barcode,
-      productName: s.product_name || 'Producto desconocido',
-      category: s.category,
-      priceCents: s.price_cents,
-      quantity: s.quantity || 1,
-      scannedAt: s.scanned_at,
-      status: s.status
-    }))
+    sales: sales.map((s) => {
+      const product = getCachedProduct(s.barcode);
+      return {
+        id: s.id,
+        barcode: s.barcode,
+        productName: s.product_name || product?.name || 'Producto desconocido',
+        category: s.category || product?.category || null,
+        priceCents: s.price_cents ?? product?.default_price_cents ?? null,
+        quantity: s.quantity || 1,
+        scannedAt: s.scanned_at,
+        status: s.status,
+        imageUrl: buildImageUrl(s.image_path || product?.image_path),
+      };
+    }),
   };
   res.json(summary);
 });
@@ -64,6 +178,35 @@ app.get('/api/pending-variable-price', (req, res) => {
 });
 
 // Endpoint para recibir códigos de barras vía HTTP (alternativa al stdin)
+app.get('/api/products', (_req, res) => {
+  const products = listProducts().map(mapProductToDto);
+  res.json(products);
+});
+
+app.post('/api/products/:barcode/image', upload.single('image'), (req, res, next) => {
+  try {
+    const { barcode } = req.params;
+    if (!req.file) {
+      return res.status(400).json({ error: 'Archivo de imagen requerido' });
+    }
+
+    const product = getCachedProduct(barcode);
+    if (!product) {
+      fs.unlink(req.file.path, () => {});
+      return res.status(404).json({ error: 'Producto no encontrado' });
+    }
+
+    const relativePath = path.join('images', req.file.filename).replace(/\\/g, '/');
+    updateProductImage(barcode, relativePath);
+    productCache.set(barcode, getProductByBarcode(barcode));
+
+    const dto = mapProductToDto(productCache.get(barcode));
+    io.emit('product-updated', dto);
+    res.json({ success: true, product: dto });
+  } catch (error) {
+    next(error);
+  }
+});
 app.post('/api/scan', (req, res) => {
   const { barcode } = req.body;
   
@@ -112,18 +255,24 @@ app.post('/api/set-variable-price', async (req, res) => {
     const accepted = new Set(data.acceptedIds || []);
     const rejected = data.rejected || [];
 
-    if (accepted.has(scanId)) {
-      markAsSynced([scanId], new Date().toISOString());
-      
+        if (accepted.has(scanId)) {
+      const syncedAt = new Date().toISOString();
+      markAsSynced([scanId], syncedAt);
+      updateScanPrice(scanId, priceCents);
+      const product = getCachedProduct(pendingVariablePriceScan.barcode);
+
       const sale = {
         ...pendingVariablePriceScan,
+        productName: pendingVariablePriceScan.productName || product?.name || 'Producto desconocido',
+        category: pendingVariablePriceScan.category || product?.category || 'varios',
         priceCents,
-        status: 'synced'
+        status: 'synced',
+        imageUrl: pendingVariablePriceScan.imageUrl || buildImageUrl(product?.image_path),
       };
-      
+
       io.emit('sale-completed', sale);
-      console.log(`✔ Venta con precio variable: $${(priceCents / 100).toFixed(2)}`);
-      
+      console.log(`?? Venta con precio variable: ${(priceCents / 100).toFixed(2)}`);
+
       pendingVariablePriceScan = null;
       res.json({ success: true, sale });
     } else {
@@ -140,24 +289,31 @@ app.post('/api/set-variable-price', async (req, res) => {
 
 // Función para procesar escaneo
 function addScan(barcode) {
+  const product = getCachedProduct(barcode);
+  const pricingMode = product?.pricing_mode ?? product?.pricingMode;
+  const priceForFixed = pricingMode === 'fixed' ? (product?.default_price_cents ?? null) : null;
+  const imagePath = product?.image_path ?? null;
+
   const scan = {
     id: uuid(),
     barcode,
     deviceId: config.deviceId,
     scannedAt: new Date().toISOString(),
+    productName: product?.name ?? null,
+    category: product?.category ?? null,
+    priceCents: priceForFixed,
+    imagePath,
   };
 
   saveScan(scan);
-  console.log(`\n📦 Lectura registrada: ${barcode}`);
+  console.log(`\n?? Lectura registrada: ${barcode}`);
   console.log(`   ID: ${scan.id}`);
   console.log(`   Timestamp: ${scan.scannedAt}\n`);
-  
-  // Emitir al frontend
-  console.log('📡 Emitiendo evento "scan-received" al frontend...');
-  io.emit('scan-received', scan);
-  
-  // Intentar sincronizar
-  console.log('🔄 Iniciando sincronización con backend...');
+
+  console.log('?? Emitiendo evento "scan-received" al frontend...');
+  io.emit('scan-received', { ...scan, imageUrl: buildImageUrl(imagePath) });
+
+  console.log('?? Iniciando sincronizaci�n con backend...');
   triggerSync();
 }
 
@@ -198,38 +354,52 @@ async function triggerSync() {
 
     const accepted = new Set(data.acceptedIds || []);
     const rejected = data.rejected || [];
-    const variablePriceRequired = data.variablePriceRequired || [];
-
-    if (accepted.size) {
-      markAsSynced([...accepted], new Date().toISOString());
+    const variablePriceRequired = data.variablePriceRequired || [];    if (accepted.size) {
+      const syncedAt = new Date().toISOString();
+      markAsSynced([...accepted], syncedAt);
       persistAccepted([...accepted], pending);
-      console.log(`✔ Enviados: ${accepted.size}`);
-      
-      // Emitir ventas completadas
+      console.log(`?? Enviados: ${accepted.size}`);
+
       for (const id of accepted) {
-        const scan = pending.find(s => s.id === id);
-        if (scan) {
-          io.emit('sale-completed', {
-            id: scan.id,
-            barcode: scan.barcode,
-            scannedAt: scan.scanned_at,
-            status: 'synced'
-          });
+        const scan = pending.find((s) => s.id === id);
+        if (!scan) continue;
+
+        const product = getCachedProduct(scan.barcode);
+        const imagePath = scan.image_path || product?.image_path || null;
+        const computedPrice =
+          scan.price_cents ?? product?.default_price_cents ?? null;
+
+        if (computedPrice != null && scan.price_cents == null) {
+          updateScanPrice(scan.id, computedPrice);
         }
+
+        io.emit('sale-completed', {
+          id: scan.id,
+          barcode: scan.barcode,
+          productName: scan.product_name || product?.name || 'Producto desconocido',
+          category: scan.category || product?.category || 'varios',
+          priceCents: computedPrice,
+          quantity: scan.quantity || 1,
+          scannedAt: scan.scanned_at,
+          status: 'synced',
+          imageUrl: buildImageUrl(imagePath),
+        });
       }
     }
 
-    // Manejar productos que requieren precio variable
+    // Manejar productos' que requieren precio variable
     for (const item of variablePriceRequired) {
-      const scan = pending.find(s => s.id === item.id);
+      const scan = pending.find((s) => s.id === item.id);
       if (scan) {
-        pendingVariablePriceScan = {
+        const product = getCachedProduct(scan.barcode);
+                pendingVariablePriceScan = {
           id: scan.id,
           barcode: scan.barcode,
           deviceId: scan.device_id,
           scannedAt: scan.scanned_at,
-          productName: item.productName || 'Varios',
-          category: item.category || 'varios'
+          productName: product?.name || item.productName || 'Varios',
+          category: product?.category || item.category || 'varios',
+          imageUrl: buildImageUrl(product?.image_path || scan.image_path),
         };
         
         io.emit('variable-price-required', pendingVariablePriceScan);
@@ -282,23 +452,40 @@ io.on('connection', (socket) => {
   // Enviar resumen actual al conectar
   const sales = getTodaySales();
   socket.emit('initial-data', {
-    sales: sales.map(s => ({
-      id: s.id,
-      barcode: s.barcode,
-      productName: s.product_name || 'Producto desconocido',
-      category: s.category,
-      priceCents: s.price_cents,
-      quantity: s.quantity || 1,
-      scannedAt: s.scanned_at,
-      status: s.status
-    })),
-    pendingVariablePrice: pendingVariablePriceScan
+    sales: sales.map((s) => {
+      const product = getCachedProduct(s.barcode);
+      return {
+        id: s.id,
+        barcode: s.barcode,
+        productName: s.product_name || product?.name || 'Producto desconocido',
+        category: s.category || product?.category || null,
+        priceCents: s.price_cents ?? product?.default_price_cents ?? null,
+        quantity: s.quantity || 1,
+        scannedAt: s.scanned_at,
+        status: s.status,
+        imageUrl: buildImageUrl(s.image_path || product?.image_path),
+      };
+    }),
+    pendingVariablePrice: pendingVariablePriceScan,
+    products: listProducts().map(mapProductToDto),
   });
 
   socket.on('disconnect', () => {
     console.log('🔌 Cliente desconectado:', socket.id);
   });
 });
+
+
+app.use((err, _req, res, _next) => {
+  console.error(`Error en la solicitud: ${err.message}`);
+  const status = err instanceof multer.MulterError ? 400 : 500;
+  res.status(status).json({ error: err.message });
+});
+
+loadProductCatalog();
+if (config.catalogRefreshMs) {
+  setInterval(loadProductCatalog, config.catalogRefreshMs);
+}
 
 // Iniciar servidor
 const PORT = process.env.PORT || 3001;
@@ -338,3 +525,13 @@ httpServer.listen(PORT, () => {
   setInterval(triggerSync, config.syncIntervalMs);
   triggerSync();
 });
+
+
+
+
+
+
+
+
+
+

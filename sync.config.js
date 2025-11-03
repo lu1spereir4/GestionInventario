@@ -4,6 +4,8 @@ export default {
   jwt: null,                                          // Pon un token aquí si decides proteger la API
   codeLength: 12,                                     // Tus Code128 generados tienen 12 caracteres (2 prefijo + 8 random + 2 checksum)
   syncIntervalMs: 60_000,                             // Reintenta cada 60 segundos
+  catalogEndpoint: '/products',                       // Endpoint relativo para obtener catálogo
+  catalogRefreshMs: 10 * 60_000,                      // Actualiza catálogo cada 10 minutos
   dbFile: './inventory-sync.db'                       // Archivo SQLite local
 };
 
