@@ -13,7 +13,33 @@ db.exec(`
     scanned_at TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending',
     synced_at TEXT,
-    attempts INTEGER NOT NULL DEFAULT 0
+    attempts INTEGER NOT NULL DEFAULT 0,
+    price_cents INTEGER
+  );
+`);
+
+const scanColumns = db.prepare("PRAGMA table_info('scans')").all();
+if (!scanColumns.some((column) => column.name === 'price_cents')) {
+  db.exec("ALTER TABLE scans ADD COLUMN price_cents INTEGER");
+}
+if (!scanColumns.some((column) => column.name === 'attempts')) {
+  db.exec("ALTER TABLE scans ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0");
+}
+
+// Los registros marcados previamente como "rejected" se vuelven a poner en cola
+db.exec("UPDATE scans SET status = 'pending' WHERE status = 'rejected'");
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS sales (
+    id TEXT PRIMARY KEY,
+    scan_id TEXT,
+    barcode TEXT NOT NULL,
+    product_name TEXT NOT NULL,
+    price REAL NOT NULL,
+    quantity INTEGER NOT NULL DEFAULT 1,
+    total REAL NOT NULL,
+    image TEXT,
+    sold_at TEXT NOT NULL
   );
 `);
 
@@ -37,9 +63,70 @@ const markSyncedStmt = db.prepare(`
 
 const markRejectedStmt = db.prepare(`
   UPDATE scans
-  SET status = 'rejected',
-      attempts = attempts + 1
+  SET attempts = attempts + 1
   WHERE id = @id
+`);
+
+const markAwaitingPriceStmt = db.prepare(`
+  UPDATE scans
+  SET status = 'awaiting_price',
+      price_cents = NULL
+  WHERE id = @id
+`);
+
+const assignPriceStmt = db.prepare(`
+  UPDATE scans
+  SET price_cents = @priceCents,
+      status = 'pending'
+  WHERE id = @scanId
+`);
+
+const insertSaleStmt = db.prepare(`
+  INSERT INTO sales (
+    id,
+    scan_id,
+    barcode,
+    product_name,
+    price,
+    quantity,
+    total,
+    image,
+    sold_at
+  ) VALUES (
+    @id,
+    @scanId,
+    @barcode,
+    @productName,
+    @price,
+    @quantity,
+    @total,
+    @image,
+    @soldAt
+  )
+`);
+
+const todaySummaryStmt = db.prepare(`
+  SELECT
+    COUNT(*) as count,
+    IFNULL(SUM(total), 0) as revenue
+  FROM sales
+  WHERE date(sold_at, 'localtime') = date('now', 'localtime')
+`);
+
+const recentSalesStmt = db.prepare(`
+  SELECT
+    id,
+    scan_id as scanId,
+    barcode,
+    product_name as productName,
+    price,
+    quantity,
+    total,
+    image,
+    sold_at as soldAt
+  FROM sales
+  ORDER BY datetime(sold_at) DESC
+  LIMIT ?
 `);
 
 export function saveScan(scan) {
@@ -48,6 +135,14 @@ export function saveScan(scan) {
 
 export function getPendingScans() {
   return pendingStmt.all();
+}
+
+export function markAwaitingPrice(scanId) {
+  markAwaitingPriceStmt.run({ id: scanId });
+}
+
+export function assignPriceToScan(scanId, priceCents) {
+  assignPriceStmt.run({ scanId, priceCents });
 }
 
 export function markAsSynced(ids, syncedAt) {
@@ -60,5 +155,44 @@ export function markAsSynced(ids, syncedAt) {
 
 export function markAsRejected(id) {
   markRejectedStmt.run({ id });
+}
+
+export function recordSale(sale) {
+  insertSaleStmt.run({
+    id: sale.id,
+    scanId: sale.scanId ?? null,
+    barcode: sale.barcode,
+    productName: sale.productName,
+    price: sale.price,
+    quantity: sale.quantity ?? 1,
+    total: sale.total,
+    image: sale.image ?? null,
+    soldAt: sale.soldAt,
+  });
+
+  return {
+    ...sale,
+    price: Number(sale.price),
+    total: Number(sale.total),
+  };
+}
+
+export function getTodaySummary() {
+  const result = todaySummaryStmt.get();
+  return {
+    count: Number(result?.count ?? 0),
+    revenue: Number(result?.revenue ?? 0),
+  };
+}
+
+export function getRecentSales(limit = 10) {
+  return recentSalesStmt
+    .all(limit)
+    .map((sale) => ({
+      ...sale,
+      price: Number(sale.price),
+      quantity: Number(sale.quantity),
+      total: Number(sale.total),
+    }));
 }
 

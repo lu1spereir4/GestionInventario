@@ -4,6 +4,11 @@ export function listen(onBarcode) {
   const buffer = [];
   const maxLength = config.codeLength;
 
+  if (!process.stdin.isTTY) {
+    console.warn('No hay TTY disponible para capturar códigos de barra.');
+    return;
+  }
+
   process.stdin.setRawMode(true);
   process.stdin.resume();
   process.stdin.setEncoding('utf8');
