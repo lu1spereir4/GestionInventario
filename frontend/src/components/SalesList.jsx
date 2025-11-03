@@ -21,27 +21,33 @@ function SalesList({ sales }) {
 }
 
 function SaleItem({ sale }) {
+  const formatPrice = (value) => {
+    const pesos = Math.round((value || 0) / 1000);
+    return `$${pesos.toLocaleString("es-CL")}`;
+  };
+
   const formatTime = (isoString) => {
-    const date = new Date(isoString);
-    return date.toLocaleTimeString('es-ES', {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
+    const utcDate = new Date(isoString);
+    const localDate = new Date(utcDate.getTime() - 3 * 60 * 60 * 1000);
+    return localDate.toLocaleTimeString("es-ES", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
     });
   };
 
   const getCategoryEmoji = (category) => {
     const emojis = {
-      bebida_latas: '🥤',
-      pasteleria: '🧁',
-      selladitos: '🥪',
-      cafeteria: '☕️',
-      pastillas: '💊',
-      papas_fritas_cajita: '🍟',
-      bebidas_energeticas: '⚡️',
-      varios: '🛒',
+      bebida_latas: "🥤",
+      pasteleria: "🧁",
+      selladitos: "🥪",
+      cafeteria: "☕️",
+      pastillas: "💊",
+      papas_fritas_cajita: "🍟",
+      bebidas_energeticas: "⚡️",
+      varios: "🛒",
     };
-    return emojis[category] || '🛒';
+    return emojis[category] || "🛒";
   };
 
   const imageUrl = sale.imageUrl || null;
@@ -63,9 +69,7 @@ function SaleItem({ sale }) {
           <span className="sale-quantity">x{sale.quantity || 1}</span>
         </div>
       </div>
-      <div className="sale-price">
-        ${((sale.priceCents || 0) / 100).toFixed(2)}
-      </div>
+      <div className="sale-price">{formatPrice(sale.priceCents)}</div>
     </div>
   );
 }

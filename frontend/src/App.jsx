@@ -193,7 +193,12 @@ function App() {
   };
 
   const totalItems = sales.reduce((sum, sale) => sum + (sale.quantity || 1), 0);
-  const totalCents = sales.reduce((sum, sale) => sum + (sale.priceCents || 0), 0);
+  const totalPesos = Math.round(
+    sales.reduce((sum, sale) => sum + (sale.priceCents || 0), 0) / 1000
+  );
+
+  const formatCurrency = (value) =>
+    `$${Math.max(0, Math.round(value || 0)).toLocaleString("es-CL")}`;
 
   return (
     <div className="app">
@@ -209,7 +214,7 @@ function App() {
           <SummaryCard title="Total Productos" value={totalItems} icon="🧾" />
           <SummaryCard
             title="Total Ventas"
-            value={`$${(totalCents / 100).toFixed(2)}`}
+            value={formatCurrency(totalPesos)}
             icon="💰"
           />
         </div>
@@ -264,4 +269,5 @@ function updateSaleWithCatalog(sale, catalog) {
 }
 
 export default App;
+
 

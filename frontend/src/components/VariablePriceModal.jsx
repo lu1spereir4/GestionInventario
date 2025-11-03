@@ -1,49 +1,65 @@
-﻿import { useState, useEffect, useRef } from 'react';
-import './VariablePriceModal.css';
+﻿import { useState, useEffect, useRef } from "react";
+import "./VariablePriceModal.css";
 
 function VariablePriceModal({ product, onSubmit, onCancel }) {
-  const [price, setPrice] = useState('');
+  const [price, setPrice] = useState("");
   const inputRef = useRef(null);
 
   useEffect(() => {
-    // Auto-focus en el input cuando se abre el modal
     if (inputRef.current) {
       inputRef.current.focus();
     }
   }, []);
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    
-    const priceNum = parseFloat(price);
-    if (isNaN(priceNum) || priceNum <= 0) {
-      alert('Por favor ingresa un precio vÃ¡lido mayor a 0');
+  const handleSubmit = (event) => {
+    event.preventDefault();
+
+    const priceInt = parseInt(price, 10);
+    if (Number.isNaN(priceInt) || priceInt <= 0) {
+      alert("Por favor ingresa un precio válido mayor a 0");
       return;
     }
 
-    const priceCents = Math.round(priceNum * 100);
+    const priceCents = priceInt * 1000;
     onSubmit(priceCents);
-    setPrice('');
+    setPrice("");
   };
+
+  const parsedPrice = parseInt(price, 10);
+  const isPriceValid = !Number.isNaN(parsedPrice) && parsedPrice > 0;
 
   const handleQuickPrice = (amount) => {
     setPrice(amount.toString());
   };
 
+  const productName = product.productName || product.barcode;
+
   return (
     <div className="modal-overlay" onClick={onCancel}>
-      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+      <div className="modal-content" onClick={(event) => event.stopPropagation()}>
         <div className="modal-header">
-          <h2>ðŸ’° Ingresa el Precio</h2>
+          <h2>💵 Ingresa el Precio</h2>
           <button className="modal-close" onClick={onCancel}>
-            âœ•
+            ✖
           </button>
         </div>
 
         <div className="modal-body">
           <div className="product-info">
-            <p className="product-name">{product.productName}</p>
-            <p className="product-barcode">CÃ³digo: {product.barcode}</p>
+            {product.imageUrl ? (
+              <img
+                className="product-thumb"
+                src={product.imageUrl}
+                alt={productName}
+                loading="lazy"
+              />
+            ) : (
+              <div className="product-thumb placeholder">🛒</div>
+            )}
+            <div>
+              <p className="product-name">{productName}</p>
+              <p className="product-barcode">Código: {product.barcode}</p>
+            </div>
           </div>
 
           <form onSubmit={handleSubmit}>
@@ -52,45 +68,37 @@ function VariablePriceModal({ product, onSubmit, onCancel }) {
               <input
                 ref={inputRef}
                 type="number"
-                step="0.01"
-                min="0.01"
+                step="1"
+                min="1"
                 value={price}
-                onChange={(e) => setPrice(e.target.value)}
-                placeholder="0.00"
+                onChange={(event) => setPrice(event.target.value)}
+                placeholder="0"
                 className="price-input"
                 autoFocus
               />
             </div>
 
             <div className="quick-prices">
-              <p className="quick-prices-label">Precios rÃ¡pidos:</p>
+              <p className="quick-prices-label">Precios rápidos:</p>
               <div className="quick-prices-grid">
-                {[0.50, 1.00, 2.00, 5.00, 10.00, 20.00].map((amount) => (
+                {[500, 1000, 1500, 2000, 2500, 3000].map((amount) => (
                   <button
                     key={amount}
                     type="button"
                     className="quick-price-btn"
                     onClick={() => handleQuickPrice(amount)}
                   >
-                    ${amount.toFixed(2)}
+                    {`$${amount.toLocaleString("es-CL")}`}
                   </button>
                 ))}
               </div>
             </div>
 
             <div className="modal-actions">
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={onCancel}
-              >
+              <button type="button" className="btn btn-secondary" onClick={onCancel}>
                 Cancelar
               </button>
-              <button
-                type="submit"
-                className="btn btn-primary"
-                disabled={!price || parseFloat(price) <= 0}
-              >
+              <button type="submit" className="btn btn-primary" disabled={!isPriceValid}>
                 Confirmar Venta
               </button>
             </div>
@@ -102,4 +110,3 @@ function VariablePriceModal({ product, onSubmit, onCancel }) {
 }
 
 export default VariablePriceModal;
-

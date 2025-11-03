@@ -115,17 +115,22 @@ async function loadProductCatalog() {
 
     const normalized = data
       .filter((item) => item && item.barcode)
-      .map((item) => ({
-        barcode: item.barcode,
-        name: item.name || item.description || item.barcode,
-        category: item.category || 'varios',
-        pricingMode: item.pricingMode || item.pricing_mode || 'fixed',
-        defaultPriceCents: item.defaultPriceCents ?? item.default_price_cents ?? null,
-        sourceType: item.sourceType ?? item.source_type ?? 'compra',
-        active: item.active !== false,
-        imagePath: item.imagePath ?? item.image_path ?? null,
-        updatedAt: item.updatedAt ?? item.updated_at ?? new Date().toISOString(),
-      }));
+      .map((item) => {
+        const rawPrice = item.defaultPriceCents ?? item.default_price_cents ?? null;
+        const defaultPriceCents = rawPrice == null ? null : round(float(rawPrice) * 1000);
+
+        return {
+          barcode: item.barcode,
+          name: item.name || item.description || item.barcode,
+          category: item.category || 'varios',
+          pricingMode: item.pricingMode || item.pricing_mode || 'fixed',
+          defaultPriceCents,
+          sourceType: item.sourceType ?? item.source_type ?? 'compra',
+          active: item.active !== false,
+          imagePath: item.imagePath ?? item.image_path ?? null,
+          updatedAt: item.updatedAt ?? item.updated_at ?? new Date().toISOString(),
+        };
+      });
 
     if (!normalized.length) return;
 
