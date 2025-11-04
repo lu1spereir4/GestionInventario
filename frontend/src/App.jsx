@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { io } from "socket.io-client";
 import "./App.css";
 import SalesList from "./components/SalesList";
@@ -17,6 +17,17 @@ function App() {
   const [connected, setConnected] = useState(false);
   const [pendingVariablePrice, setPendingVariablePrice] = useState(null);
   const [products, setProducts] = useState([]);
+  const productsRef = useRef([]);
+
+  useEffect(() => {
+    productsRef.current = products;
+  }, [products]);
+
+  const enrichSale = (sale, catalog) =>
+    updateSaleWithCatalog(sale, catalog || productsRef.current);
+
+  const enrichSales = (list, catalog) =>
+    sortSales((list || []).map((sale) => enrichSale(sale, catalog)));
 
   useEffect(() => {
     const fetchProducts = async () => {
@@ -25,9 +36,13 @@ function App() {
         if (response.ok) {
           const data = await response.json();
           setProducts(data);
+          setSales((prev) => enrichSales(prev, data));
+          setPendingVariablePrice((prev) =>
+            prev ? updateSaleWithCatalog(prev, data) : null
+          );
         }
       } catch (error) {
-        console.error("Error cargando catálogo local:", error);
+        console.error("Error cargando cat�logo local:", error);
       }
     };
 
@@ -42,33 +57,34 @@ function App() {
 
 
     socket.on("connect", () => {
-      console.log("🟢 Conectado al servidor");
+      console.log("?? Conectado al servidor");
       setConnected(true);
     });
 
     socket.on("disconnect", () => {
-      console.log("🔴 Desconectado del servidor");
+      console.log("?? Desconectado del servidor");
       setConnected(false);
     });
 
     socket.on("initial-data", (data) => {
-      console.log("📦 Datos iniciales recibidos:", data);
-      if (Array.isArray(data.sales)) {
-        setSales(data.sales);
-      }
-      if (data.pendingVariablePrice) {
-        setPendingVariablePrice(data.pendingVariablePrice);
-      }
+      console.log("?? Datos iniciales recibidos:", data);
       if (Array.isArray(data.products)) {
         setProducts(data.products);
+      }
+      if (Array.isArray(data.sales)) {
+        setSales(enrichSales(data.sales, data.products));
+      }
+      if (data.pendingVariablePrice) {
+        setPendingVariablePrice(enrichSale(data.pendingVariablePrice, data.products));
       }
     });
 
     socket.on("products-refreshed", (catalog) => {
       if (Array.isArray(catalog)) {
         setProducts(catalog);
-        setSales((prev) =>
-          prev.map((sale) => updateSaleWithCatalog(sale, catalog))
+        setSales((prev) => enrichSales(prev, catalog));
+        setPendingVariablePrice((prev) =>
+          prev ? updateSaleWithCatalog(prev, catalog) : null
         );
       }
     });
@@ -90,31 +106,43 @@ function App() {
     });
 
     socket.on("sale-completed", (sale) => {
-      console.log("✅ Venta completada:", sale);
-      setSales((prev) => [sale, ...prev]);
+      console.log("? Venta completada:", sale);
+      const enrichedSale = enrichSale(sale);
+      setSales((prev) => upsertSale(prev, enrichedSale));
       setProducts((prev) => mergeProduct(prev, {
-        barcode: sale.barcode,
-        name: sale.productName || sale.barcode,
-        category: sale.category,
-        imageUrl: sale.imageUrl,
+        barcode: enrichedSale.barcode,
+        name: enrichedSale.productName || enrichedSale.barcode,
+        category: enrichedSale.category,
+        imageUrl: enrichedSale.imageUrl,
       }));
       playSound("success");
     });
 
+    socket.on("sale-updated", (sale) => {
+      setSales((prev) => upsertSale(prev, enrichSale(sale)));
+    });
+
     socket.on("variable-price-required", (scan) => {
-      console.log("⚠️ Precio variable requerido:", scan);
-      setPendingVariablePrice(scan);
+      console.log("?? Precio variable requerido:", scan);
+      setPendingVariablePrice(enrichSale(scan));
       playSound("alert");
     });
 
     socket.on("sale-rejected", (rejection) => {
-      console.error("❌ Venta rechazada:", rejection);
+      console.error("? Venta rechazada:", rejection);
+      setSales((prev) =>
+        upsertSale(prev, {
+          id: rejection.id,
+          status: "rejected",
+          rejectionReason: rejection.reason,
+        })
+      );
       playSound("error");
       alert(`Venta rechazada: ${rejection.reason}`);
     });
 
     socket.on("sync-error", (error) => {
-      console.error("Error de sincronización:", error);
+      console.error("Error de sincronizaci�n:", error);
     });
 
     return () => {
@@ -202,18 +230,18 @@ function App() {
     <div className="app">
       <header className="app-header">
         <div className="header-content">
-          <h1>📦 Sistema de Inventario</h1>
+          <h1>?? Sistema de Inventario</h1>
           <ConnectionStatus connected={connected} />
         </div>
       </header>
 
       <main className="app-main">
         <div className="summary-section">
-          <SummaryCard title="Total Productos" value={totalItems} icon="🧾" />
+          <SummaryCard title="Total Productos" value={totalItems} icon="??" />
           <SummaryCard
             title="Total Ventas"
             value={formatCurrency(totalPesos)}
-            icon="💰"
+            icon="??"
           />
         </div>
 
@@ -225,7 +253,7 @@ function App() {
         />
 
         <div className="sales-section">
-          <h2>Ventas del día</h2>
+          <h2>Ventas del d�a</h2>
           <SalesList sales={sales} />
         </div>
       </main>
@@ -252,8 +280,10 @@ function mergeProduct(existing, updated) {
   return Array.from(map.values());
 }
 
-function updateSaleWithCatalog(sale, catalog) {
-  const product = catalog.find((item) => item.barcode === sale.barcode);
+function updateSaleWithCatalog(sale, catalog = []) {
+  const product = Array.isArray(catalog)
+    ? catalog.find((item) => item.barcode === sale.barcode)
+    : undefined;
   if (!product) return sale;
   const pricingFixed = product.pricingMode === "fixed";
   return {
@@ -267,5 +297,33 @@ function updateSaleWithCatalog(sale, catalog) {
 }
 
 export default App;
+
+function sortSales(items) {
+  return [...items].sort((a, b) => {
+    const dateA = new Date(a.scannedAt || a.scanned_at || 0).getTime();
+    const dateB = new Date(b.scannedAt || b.scanned_at || 0).getTime();
+    return dateB - dateA;
+  });
+}
+
+function upsertSale(existing, sale) {
+  if (!sale || !sale.id) {
+    return existing;
+  }
+
+  const map = new Map(existing.map((item) => [item.id, item]));
+  const current = map.get(sale.id) || {};
+  map.set(sale.id, {
+    ...current,
+    ...sale,
+    scannedAt:
+      sale.scannedAt ||
+      sale.scanned_at ||
+      current.scannedAt ||
+      current.scanned_at ||
+      new Date().toISOString(),
+  });
+  return sortSales(Array.from(map.values()));
+}
 
 

@@ -62,6 +62,26 @@ app.use('/images', express.static(IMAGE_DIR));
 let syncing = false;
 let pendingVariablePriceScan = null;
 const productCache = new Map();
+const PRICE_SCALE = 1000;
+
+function toRemotePrice(value) {
+  if (value == null) return null;
+  const numeric = Number(value);
+  if (Number.isNaN(numeric)) return null;
+  return Math.round(numeric * PRICE_SCALE);
+}
+
+function broadcastSale(scan, product = null, statusOverride = null) {
+  const dto = mapScanToClient(
+    {
+      ...scan,
+      status: statusOverride || scan.status || 'pending',
+    },
+    product,
+  );
+  io.emit('sale-updated', dto);
+  return dto;
+}
 
 function buildImageUrl(imagePath) {
   if (!imagePath) return null;
@@ -92,6 +112,20 @@ function getCachedProduct(barcode) {
   }
   return product || null;
 }
+
+function hydrateProductCache() {
+  try {
+    const products = listProducts();
+    products.forEach(cacheProduct);
+    if (products.length) {
+      console.log(`Catálogo local precargado: ${products.length} productos.`);
+    }
+  } catch (error) {
+    console.warn('No se pudo precargar el catálogo local:', error.message);
+  }
+}
+
+hydrateProductCache();
 
 function isVariablePricing(source) {
   if (!source) return false;
@@ -250,9 +284,126 @@ function persistRejected(reject) {
   );
 }
 
+function findPendingVariablePriceScan() {
+  const pending = getPendingScans();
+  for (const scan of pending) {
+    const product = getCachedProduct(scan.barcode);
+    const pricingMode =
+      scan.pricing_mode ||
+      scan.pricingMode ||
+      product?.pricing_mode ||
+      product?.pricingMode;
+    const category = scan.category || product?.category || null;
+    const productName = scan.product_name || product?.name || null;
+    const isVariable = isVariablePricing({
+      pricingMode,
+      category,
+      productName,
+    });
+    const priceCents =
+      scan.price_cents ?? scan.priceCents ?? product?.default_price_cents ?? null;
+    if (isVariable && (!priceCents || priceCents <= 0)) {
+      return buildPendingVariableScan(scan, product);
+    }
+  }
+  return null;
+}
+
+function handleSyncResult(result, pending, payloadScans = []) {
+  if (!result || typeof result !== 'object') {
+    return;
+  }
+
+  const accepted = new Set(result.acceptedIds || []);
+  const rejected = result.rejected || [];
+  const variablePriceRequired = result.variablePriceRequired || [];
+
+  if (accepted.size) {
+    const syncedAt = new Date().toISOString();
+    markAsSynced([...accepted], syncedAt);
+    if (payloadScans.length) {
+      persistAccepted([...accepted], payloadScans);
+    }
+
+    for (const id of accepted) {
+      const scan = pending.find((item) => item.id === id);
+      if (!scan) continue;
+      const product = getCachedProduct(scan.barcode);
+      const sale = broadcastSale(
+        { ...scan, status: 'synced', synced_at: syncedAt, syncedAt },
+        product,
+        'synced',
+      );
+      io.emit('sale-completed', sale);
+    }
+  }
+
+  for (const item of variablePriceRequired) {
+    const scan = pending.find((entry) => entry.id === item.id);
+    if (!scan) continue;
+    enqueueVariablePrice(scan, getCachedProduct(scan.barcode), {
+      productName: item.productName || scan.product_name,
+      category: item.category || scan.category,
+    });
+  }
+
+  for (const rej of rejected) {
+    markAsRejected(rej.id);
+    persistRejected(rej);
+    io.emit('sale-rejected', {
+      id: rej.id,
+      reason: rej.reason || 'Rechazado por backend',
+    });
+    const rejectedScan = pending.find((item) => item.id === rej.id);
+    if (rejectedScan) {
+      broadcastSale(
+        { ...rejectedScan, status: 'rejected' },
+        getCachedProduct(rejectedScan.barcode),
+        'rejected',
+      );
+    }
+  }
+
+  if (!pendingVariablePriceScan) {
+    pendingVariablePriceScan = findPendingVariablePriceScan();
+  }
+}
+
 function enqueueVariablePrice(scanRow, product = null, overrides = {}) {
-  const pending = buildPendingVariableScan(scanRow, product, overrides);
+  const variableSource = {
+    pricingMode:
+      overrides.pricingMode ||
+      scanRow.pricingMode ||
+      scanRow.pricing_mode ||
+      product?.pricing_mode ||
+      product?.pricingMode,
+    category: overrides.category || scanRow.category || scanRow.product_category || product?.category,
+    productName:
+      overrides.productName ||
+      scanRow.productName ||
+      scanRow.product_name ||
+      product?.name,
+  };
+
+  if (!isVariablePricing(variableSource)) {
+    console.warn(
+      `Se ignoró una solicitud de precio variable para ${scanRow.barcode} porque no pertenece a la categoría 'Varios'.`,
+    );
+    return;
+  }
+
+  const pending = buildPendingVariableScan(
+    {
+      ...scanRow,
+      pricing_mode: variableSource.pricingMode,
+      category: variableSource.category,
+      product_name: variableSource.productName,
+    },
+    product,
+    overrides,
+  );
   pendingVariablePriceScan = pending;
+  broadcastSale(pending, product, 'pending');
   io.emit('variable-price-required', pending);
 }
 
@@ -292,6 +443,8 @@ function addScan(rawBarcode, source = 'stdin') {
   saveScan(scanRecord);
   io.emit('scan-received', { id: scanRecord.id, barcode });
   console.log(`Lectura registrada (${source}): ${barcode}`);
+
+  broadcastSale(scanRecord, product, 'pending');
 
   if (variable && !pendingVariablePriceScan) {
     enqueueVariablePrice(
@@ -359,7 +512,7 @@ async function triggerSync() {
     };
 
     if (isVariable && priceCents) {
-      payload.variablePriceCents = priceCents;
+      payload.variablePriceCents = toRemotePrice(priceCents);
     }
 
     payloadScans.push(payload);
@@ -381,43 +534,20 @@ async function triggerSync() {
       { headers, timeout: 5000 },
     );
 
-    const accepted = new Set(data.acceptedIds || []);
-    const rejected = data.rejected || [];
-    const variablePriceRequired = data.variablePriceRequired || [];
-
-    if (accepted.size) {
-      markAsSynced([...accepted], new Date().toISOString());
-      persistAccepted([...accepted], payloadScans);
-
-      for (const id of accepted) {
-        const scan = pending.find((item) => item.id === id);
-        if (!scan) continue;
-        const sale = mapScanToClient({ ...scan, status: 'synced' });
-        io.emit('sale-completed', sale);
-      }
-    }
-
-    for (const item of variablePriceRequired) {
-      const scan = pending.find((entry) => entry.id === item.id);
-      if (!scan) continue;
-      enqueueVariablePrice(scan, getCachedProduct(scan.barcode), {
-        productName: item.productName || scan.product_name,
-        category: item.category || scan.category,
-      });
-    }
-
-    for (const rej of rejected) {
-      markAsRejected(rej.id);
-      persistRejected(rej);
-      io.emit('sale-rejected', {
-        id: rej.id,
-        reason: rej.reason || 'Rechazado por backend',
-      });
-    }
+    handleSyncResult(data, pending, payloadScans);
   } catch (error) {
-    const message = error.response?.data?.error || error.message;
-    console.error('Error sincronizando:', message);
-    io.emit('sync-error', { message });
+    const responseData = error.response?.data;
+    const message = responseData?.error || error.message;
+    console.error('Error sincronizando:', message, responseData || '');
+    if (responseData) {
+      handleSyncResult(responseData, pending);
+    }
+    io.emit('sync-error', { message, details: responseData });
+    if (error.code === 'ENETUNREACH' || error.code === 'ECONNREFUSED') {
+      setTimeout(() => {
+        if (!syncing) triggerSync();
+      }, 5000);
+    }
   } finally {
     syncing = false;
   }
@@ -498,89 +628,89 @@ app.post('/api/set-variable-price', async (req, res) => {
     return res.status(404).json({ error: 'Scan no encontrado o ya procesado' });
   }
 
-  try {
-    const headers = { 'Content-Type': 'application/json' };
-    if (config.jwt) headers.Authorization = `Bearer ${config.jwt}`;
-    const apiBase = config.apiBase.replace(/\/$/, '');
-    const variable = isVariablePricing(pendingVariablePriceScan);
+  const variableScan = pendingVariablePriceScan;
+  pendingVariablePriceScan = null;
 
+  updateScanPrice(scanId, priceCents);
+
+  const product = getCachedProduct(variableScan.barcode);
+  const baseSale = {
+    ...variableScan,
+    priceCents,
+    price_cents: priceCents,
+    status: 'pending',
+  };
+
+  const pendingSaleDto = broadcastSale(baseSale, product, 'pending');
+
+  const headers = { 'Content-Type': 'application/json' };
+  if (config.jwt) headers.Authorization = `Bearer ${config.jwt}`;
+  const apiBase = config.apiBase.replace(/\/$/, '');
+  const variable = isVariablePricing(variableScan);
+
+  try {
     if (variable) {
       await axios.post(
         `${apiBase}/sales/varios`,
         {
-          priceCents,
-          quantity: pendingVariablePriceScan.quantity || 1,
+          priceCents: toRemotePrice(priceCents),
+          quantity: variableScan.quantity || 1,
           deviceId: config.deviceId,
         },
         { headers, timeout: 5000 },
       );
 
-      markAsSynced([scanId], new Date().toISOString());
-      updateScanPrice(scanId, priceCents);
+      const syncedAt = new Date().toISOString();
+      markAsSynced([scanId], syncedAt);
 
-      const product = getCachedProduct(pendingVariablePriceScan.barcode);
-      const sale = mapScanToClient(
-        {
-          ...pendingVariablePriceScan,
-          priceCents,
-          status: 'synced',
-        },
+      const saleDto = broadcastSale(
+        { ...baseSale, status: 'synced', syncedAt },
         product,
+        'synced',
       );
-
-      io.emit('sale-completed', sale);
-      pendingVariablePriceScan = null;
-      res.json({ success: true, sale });
+      io.emit('sale-completed', saleDto);
       triggerSync();
-      return;
+      return res.json({ success: true, sale: saleDto });
     }
 
     const payload = {
       scans: [
         {
-          id: pendingVariablePriceScan.id,
-          barcode: pendingVariablePriceScan.barcode,
+          id: variableScan.id,
+          barcode: variableScan.barcode,
           deviceId: config.deviceId,
-          scannedAt: pendingVariablePriceScan.scannedAt,
-          variablePriceCents: priceCents,
+          scannedAt: variableScan.scannedAt,
+          variablePriceCents: toRemotePrice(priceCents),
         },
       ],
     };
 
-    const { data } = await axios.post(
-      `${apiBase}/scans/bulk`,
-      payload,
-      { headers, timeout: 5000 },
-    );
+    const { data } = await axios.post(`${apiBase}/scans/bulk`, payload, {
+      headers,
+      timeout: 5000,
+    });
 
     const accepted = new Set(data.acceptedIds || []);
     const rejected = data.rejected || [];
 
     if (accepted.has(scanId)) {
-      markAsSynced([scanId], new Date().toISOString());
-      updateScanPrice(scanId, priceCents);
+      const syncedAt = new Date().toISOString();
+      markAsSynced([scanId], syncedAt);
 
-      const sale = mapScanToClient(
-        {
-          ...pendingVariablePriceScan,
-          priceCents,
-          status: 'synced',
-        },
-        getCachedProduct(pendingVariablePriceScan.barcode),
+      const saleDto = broadcastSale(
+        { ...baseSale, status: 'synced', syncedAt },
+        product,
+        'synced',
       );
-
-      io.emit('sale-completed', sale);
-      pendingVariablePriceScan = null;
-      res.json({ success: true, sale });
+      io.emit('sale-completed', saleDto);
       triggerSync();
-      return;
+      return res.json({ success: true, sale: saleDto });
     }
 
     const rejection = rejected.find((item) => item.id === scanId);
     if (rejection) {
       markAsRejected(scanId);
       persistRejected(rejection);
-      pendingVariablePriceScan = null;
       io.emit('sale-rejected', { id: scanId, reason: rejection.reason });
       return res.status(502).json({ error: rejection.reason || 'Rechazado' });
     }
@@ -589,7 +719,10 @@ app.post('/api/set-variable-price', async (req, res) => {
   } catch (error) {
     const message = error.response?.data?.error || error.message;
     console.error('Error enviando precio variable:', message);
-    return res.status(500).json({ error: message });
+    triggerSync();
+    return res
+      .status(202)
+      .json({ success: true, pendingSync: true, sale: pendingSaleDto, error: message });
   }
 });
 
@@ -601,6 +734,9 @@ app.use((error, _req, res, _next) => {
 io.on('connection', (socket) => {
   console.log(`Cliente conectado: ${socket.id}`);
   const sales = getTodaySales();
+  if (!pendingVariablePriceScan) {
+    pendingVariablePriceScan = findPendingVariablePriceScan();
+  }
 
   socket.emit('initial-data', {
     sales: sales.map((s) => mapScanToClient(s)),
@@ -646,6 +782,7 @@ httpServer.listen(PORT, () => {
   setInterval(loadProductCatalog, config.catalogRefreshMs);
   setInterval(triggerSync, config.syncIntervalMs);
   triggerSync();
+  pendingVariablePriceScan = findPendingVariablePriceScan();
 
   listen((code) => addScan(code, 'stdin'));
   startUsbListener();

@@ -50,6 +50,14 @@ function SaleItem({ sale }) {
     return emojis[category] || "🛒";
   };
 
+  const status = sale.status || "pending";
+  const statusLabel =
+    {
+      synced: "Sincronizada",
+      pending: "Pendiente",
+      rejected: "Rechazada",
+    }[status] || "Pendiente";
+
   const imageUrl = sale.imageUrl || null;
   const productLabel = sale.productName || sale.barcode;
 
@@ -67,6 +75,7 @@ function SaleItem({ sale }) {
         <div className="sale-meta">
           <span className="sale-time">{formatTime(sale.scannedAt)}</span>
           <span className="sale-quantity">x{sale.quantity || 1}</span>
+          <span className={`sale-status sale-status-${status}`}>{statusLabel}</span>
         </div>
       </div>
       <div className="sale-price">{formatPrice(sale.priceCents)}</div>
