@@ -62,7 +62,7 @@ app.use('/images', express.static(IMAGE_DIR));
 let syncing = false;
 let pendingVariablePriceScan = null;
 const productCache = new Map();
-const PRICE_SCALE = 1000;
+const PRICE_SCALE = 1;
 
 function toRemotePrice(value) {
   if (value == null) return null;
@@ -403,8 +403,45 @@ function enqueueVariablePrice(scanRow, product = null, overrides = {}) {
     overrides,
   );
   pendingVariablePriceScan = pending;
-  broadcastSale(pending, product, 'pending');
   io.emit('variable-price-required', pending);
+}
+
+async function submitVariableScan(scan, product, priceCents) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (config.jwt) headers.Authorization = `Bearer ${config.jwt}`;
+  const apiBase = config.apiBase.replace(/\/$/, '');
+
+  const quantity =
+    typeof scan.quantity === 'number' && scan.quantity > 0
+      ? scan.quantity
+      : 1;
+
+  await axios.post(
+    `${apiBase}/sales/varios`,
+    {
+      priceCents: toRemotePrice(priceCents),
+      quantity,
+      deviceId: scan.deviceId || scan.device_id || config.deviceId,
+    },
+    { headers, timeout: 5000 },
+  );
+
+  const syncedAt = new Date().toISOString();
+  markAsSynced([scan.id], syncedAt);
+
+  const saleDto = broadcastSale(
+    {
+      ...scan,
+      priceCents,
+      price_cents: priceCents,
+      status: 'synced',
+      scannedAt: scan.scannedAt || scan.scanned_at,
+    },
+    product,
+    'synced',
+  );
+  io.emit('sale-completed', saleDto);
+  return saleDto;
 }
 
 function addScan(rawBarcode, source = 'stdin') {
@@ -444,9 +481,7 @@ function addScan(rawBarcode, source = 'stdin') {
   io.emit('scan-received', { id: scanRecord.id, barcode });
   console.log(`Lectura registrada (${source}): ${barcode}`);
 
-  broadcastSale(scanRecord, product, 'pending');
-
-  if (variable && !pendingVariablePriceScan) {
+  if (variable) {
     enqueueVariablePrice(
       {
         id: scanRecord.id,
@@ -460,8 +495,10 @@ function addScan(rawBarcode, source = 'stdin') {
       product,
     );
   } else {
-    triggerSync();
+    broadcastSale(scanRecord, product, 'pending');
   }
+
+  triggerSync();
 }
 
 async function triggerSync() {
@@ -471,6 +508,7 @@ async function triggerSync() {
   if (pending.length === 0) return;
 
   const payloadScans = [];
+  const variableQueue = [];
 
   for (const scan of pending) {
     const product = getCachedProduct(scan.barcode);
@@ -496,10 +534,14 @@ async function triggerSync() {
     });
     const needsPrice = isVariable && (!priceCents || priceCents <= 0);
 
-    if (needsPrice) {
-      if (!pendingVariablePriceScan || pendingVariablePriceScan.id !== scan.id) {
-        enqueueVariablePrice(scan, product);
-        console.log(`Precio variable requerido para ${scan.barcode}`);
+    if (isVariable) {
+      if (needsPrice) {
+        if (!pendingVariablePriceScan || pendingVariablePriceScan.id !== scan.id) {
+          enqueueVariablePrice(scan, product);
+          console.log(`Precio variable requerido para ${scan.barcode}`);
+        }
+      } else {
+        variableQueue.push({ scan, product, priceCents });
       }
       continue;
     }
@@ -511,14 +553,10 @@ async function triggerSync() {
       scannedAt: scan.scanned_at,
     };
 
-    if (isVariable && priceCents) {
-      payload.variablePriceCents = toRemotePrice(priceCents);
-    }
-
     payloadScans.push(payload);
   }
 
-  if (!payloadScans.length) {
+  if (!payloadScans.length && !variableQueue.length) {
     return;
   }
 
@@ -527,14 +565,24 @@ async function triggerSync() {
 
   syncing = true;
   try {
-    const apiBase = config.apiBase.replace(/\/$/, '');
-    const { data } = await axios.post(
-      `${apiBase}/scans/bulk`,
-      { scans: payloadScans },
-      { headers, timeout: 5000 },
-    );
+    for (const item of variableQueue) {
+      try {
+        await submitVariableScan(item.scan, item.product, item.priceCents);
+      } catch (error) {
+        console.error('Error enviando precio variable (reintento):', error.message);
+      }
+    }
 
-    handleSyncResult(data, pending, payloadScans);
+    if (payloadScans.length) {
+      const apiBase = config.apiBase.replace(/\/$/, '');
+      const { data } = await axios.post(
+        `${apiBase}/scans/bulk`,
+        { scans: payloadScans },
+        { headers, timeout: 5000 },
+      );
+
+      handleSyncResult(data, pending, payloadScans);
+    }
   } catch (error) {
     const responseData = error.response?.data;
     const message = responseData?.error || error.message;
@@ -643,79 +691,25 @@ app.post('/api/set-variable-price', async (req, res) => {
 
   const pendingSaleDto = broadcastSale(baseSale, product, 'pending');
 
-  const headers = { 'Content-Type': 'application/json' };
-  if (config.jwt) headers.Authorization = `Bearer ${config.jwt}`;
-  const apiBase = config.apiBase.replace(/\/$/, '');
   const variable = isVariablePricing(variableScan);
 
+  if (!variable) {
+    return res.status(400).json({ error: 'El producto no requiere precio variable' });
+  }
+
   try {
-    if (variable) {
-      await axios.post(
-        `${apiBase}/sales/varios`,
-        {
-          priceCents: toRemotePrice(priceCents),
-          quantity: variableScan.quantity || 1,
-          deviceId: config.deviceId,
-        },
-        { headers, timeout: 5000 },
-      );
-
-      const syncedAt = new Date().toISOString();
-      markAsSynced([scanId], syncedAt);
-
-      const saleDto = broadcastSale(
-        { ...baseSale, status: 'synced', syncedAt },
-        product,
-        'synced',
-      );
-      io.emit('sale-completed', saleDto);
-      triggerSync();
-      return res.json({ success: true, sale: saleDto });
-    }
-
-    const payload = {
-      scans: [
-        {
-          id: variableScan.id,
-          barcode: variableScan.barcode,
-          deviceId: config.deviceId,
-          scannedAt: variableScan.scannedAt,
-          variablePriceCents: toRemotePrice(priceCents),
-        },
-      ],
-    };
-
-    const { data } = await axios.post(`${apiBase}/scans/bulk`, payload, {
-      headers,
-      timeout: 5000,
-    });
-
-    const accepted = new Set(data.acceptedIds || []);
-    const rejected = data.rejected || [];
-
-    if (accepted.has(scanId)) {
-      const syncedAt = new Date().toISOString();
-      markAsSynced([scanId], syncedAt);
-
-      const saleDto = broadcastSale(
-        { ...baseSale, status: 'synced', syncedAt },
-        product,
-        'synced',
-      );
-      io.emit('sale-completed', saleDto);
-      triggerSync();
-      return res.json({ success: true, sale: saleDto });
-    }
-
-    const rejection = rejected.find((item) => item.id === scanId);
-    if (rejection) {
-      markAsRejected(scanId);
-      persistRejected(rejection);
-      io.emit('sale-rejected', { id: scanId, reason: rejection.reason });
-      return res.status(502).json({ error: rejection.reason || 'Rechazado' });
-    }
-
-    throw new Error('El backend no procesó el scan');
+    const saleDto = await submitVariableScan(
+      {
+        ...variableScan,
+        priceCents,
+        price_cents: priceCents,
+      },
+      product,
+      priceCents,
+    );
+    pendingVariablePriceScan = null;
+    triggerSync();
+    return res.json({ success: true, sale: saleDto });
   } catch (error) {
     const message = error.response?.data?.error || error.message;
     console.error('Error enviando precio variable:', message);

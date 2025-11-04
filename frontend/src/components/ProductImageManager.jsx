@@ -7,7 +7,7 @@ function ProductImageManager({ products, onImageUploaded }) {
   const [status, setStatus] = useState(null);
 
   const sortedProducts = useMemo(
-    () => [...products].sort((a, b) => a.name.localeCompare(b.name)),
+    () => Array.from(new Map(products.map(p => [p.barcode, p])).values()).sort((a, b) => a.name.localeCompare(b.name)),
     [products]
   );
 

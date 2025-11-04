@@ -42,7 +42,7 @@ function App() {
           );
         }
       } catch (error) {
-        console.error("Error cargando cat�logo local:", error);
+        console.error("Error cargando catálogo local:", error);
       }
     };
 
@@ -57,17 +57,17 @@ function App() {
 
 
     socket.on("connect", () => {
-      console.log("?? Conectado al servidor");
+      console.log("🟢 Conectado al servidor");
       setConnected(true);
     });
 
     socket.on("disconnect", () => {
-      console.log("?? Desconectado del servidor");
+      console.log("🔴 Desconectado del servidor");
       setConnected(false);
     });
 
     socket.on("initial-data", (data) => {
-      console.log("?? Datos iniciales recibidos:", data);
+      console.log("📦 Datos iniciales recibidos:", data);
       if (Array.isArray(data.products)) {
         setProducts(data.products);
       }
@@ -106,7 +106,7 @@ function App() {
     });
 
     socket.on("sale-completed", (sale) => {
-      console.log("? Venta completada:", sale);
+      console.log("✅ Venta completada:", sale);
       const enrichedSale = enrichSale(sale);
       setSales((prev) => upsertSale(prev, enrichedSale));
       setProducts((prev) => mergeProduct(prev, {
@@ -123,13 +123,13 @@ function App() {
     });
 
     socket.on("variable-price-required", (scan) => {
-      console.log("?? Precio variable requerido:", scan);
+      console.log("⚠️ Precio variable requerido:", scan);
       setPendingVariablePrice(enrichSale(scan));
       playSound("alert");
     });
 
     socket.on("sale-rejected", (rejection) => {
-      console.error("? Venta rechazada:", rejection);
+      console.error("❌ Venta rechazada:", rejection);
       setSales((prev) =>
         upsertSale(prev, {
           id: rejection.id,
@@ -142,7 +142,7 @@ function App() {
     });
 
     socket.on("sync-error", (error) => {
-      console.error("Error de sincronizaci�n:", error);
+      console.error("Error de sincronización:", error);
     });
 
     return () => {
@@ -230,18 +230,18 @@ function App() {
     <div className="app">
       <header className="app-header">
         <div className="header-content">
-          <h1>?? Sistema de Inventario</h1>
+          <h1>📦 Sistema de Inventario</h1>
           <ConnectionStatus connected={connected} />
         </div>
       </header>
 
       <main className="app-main">
         <div className="summary-section">
-          <SummaryCard title="Total Productos" value={totalItems} icon="??" />
+          <SummaryCard title="Total Productos" value={totalItems} icon="🧾" />
           <SummaryCard
             title="Total Ventas"
             value={formatCurrency(totalPesos)}
-            icon="??"
+            icon="💰"
           />
         </div>
 
@@ -253,7 +253,7 @@ function App() {
         />
 
         <div className="sales-section">
-          <h2>Ventas del d�a</h2>
+          <h2>Ventas del día</h2>
           <SalesList sales={sales} />
         </div>
       </main>
