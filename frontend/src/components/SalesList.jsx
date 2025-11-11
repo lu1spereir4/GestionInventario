@@ -1,4 +1,4 @@
-﻿import "./SalesList.css";
+import "./SalesList.css";
 
 function SalesList({ sales }) {
   if (!sales.length) {
@@ -22,7 +22,7 @@ function SalesList({ sales }) {
 
 function SaleItem({ sale }) {
   const formatPrice = (value) => {
-    const pesos = Math.round((value || 0) / 1000);
+    const pesos = Math.max(0, Math.round(value || 0));
     return `$${pesos.toLocaleString("es-CL")}`;
   };
 
@@ -50,6 +50,36 @@ function SaleItem({ sale }) {
     return emojis[category] || "🛒";
   };
 
+  const handleDelete = async () => {
+    if (!window.confirm("¿Estás seguro de que deseas eliminar esta venta?")) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/sales/${sale.id}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Error al eliminar la venta");
+      }
+
+      console.log("✅ Venta eliminada:", sale.id);
+    } catch (error) {
+      console.error("Error eliminando venta:", error);
+      alert(`Error: ${error.message}`);
+    }
+  };
+
+  const status = sale.status || "pending";
+  const statusLabel =
+    {
+      synced: "Sincronizada",
+      pending: "Pendiente",
+      rejected: "Rechazada",
+    }[status] || "Pendiente";
+
   const imageUrl = sale.imageUrl || null;
   const productLabel = sale.productName || sale.barcode;
 
@@ -67,9 +97,13 @@ function SaleItem({ sale }) {
         <div className="sale-meta">
           <span className="sale-time">{formatTime(sale.scannedAt)}</span>
           <span className="sale-quantity">x{sale.quantity || 1}</span>
+          <span className={`sale-status sale-status-${status}`}>{statusLabel}</span>
         </div>
       </div>
       <div className="sale-price">{formatPrice(sale.priceCents)}</div>
+      <button className="sale-delete" onClick={handleDelete} title="Eliminar venta">
+        🗑️
+      </button>
     </div>
   );
 }

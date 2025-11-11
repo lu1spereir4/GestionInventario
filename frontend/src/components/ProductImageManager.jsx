@@ -1,45 +1,83 @@
-﻿import { useState, useMemo } from "react";
+import { useMemo, useState } from "react";
 import "./ProductImageManager.css";
 
+const normalize = (name = "") => name.trim().toLowerCase();
+
 function ProductImageManager({ products, onImageUploaded }) {
-  const [selectedBarcode, setSelectedBarcode] = useState("");
+  const [selectedGroup, setSelectedGroup] = useState("");
   const [file, setFile] = useState(null);
   const [status, setStatus] = useState(null);
 
-  const sortedProducts = useMemo(
-    () => [...products].sort((a, b) => a.name.localeCompare(b.name)),
-    [products]
-  );
+  const groupedProducts = useMemo(() => {
+    const groups = new Map();
+
+    products.forEach((product) => {
+      if (!product?.name || !product?.barcode) {
+        return;
+      }
+
+      const key = normalize(product.name);
+      const displayName = product.name.trim();
+
+      if (!groups.has(key)) {
+        groups.set(key, { key, displayName, barcodes: [] });
+      }
+
+      groups.get(key).barcodes.push(product.barcode);
+    });
+
+    return Array.from(groups.values()).sort((a, b) =>
+      a.displayName.localeCompare(b.displayName)
+    );
+  }, [products]);
+
+  const currentGroup =
+    groupedProducts.find((group) => group.key === selectedGroup) || null;
 
   const handleSubmit = async (event) => {
     event.preventDefault();
-    if (!selectedBarcode || !file) {
-      setStatus({ type: "error", message: "Selecciona un producto e imagen" });
+    if (!currentGroup || !file) {
+      setStatus({
+        type: "error",
+        message: "Selecciona un producto e imagen",
+      });
       return;
     }
 
     try {
-      const formData = new FormData();
-      formData.append("image", file);
+      let updated = 0;
 
-      const response = await fetch(`/api/products/${selectedBarcode}/image`, {
-        method: "POST",
-        body: formData,
+      for (const barcode of currentGroup.barcodes) {
+        const formData = new FormData();
+        formData.append("image", file);
+
+        const response = await fetch(`/api/products/${barcode}/image`, {
+          method: "POST",
+          body: formData,
+        });
+
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({}));
+          throw new Error(error.error || "Error al subir imagen");
+        }
+
+        const data = await response.json();
+        updated += 1;
+
+        if (onImageUploaded) {
+          onImageUploaded(barcode, data.product?.imageUrl);
+        }
+      }
+
+      setStatus({
+        type: "success",
+        message: `Imagen actualizada para ${updated} código${
+          updated === 1 ? "" : "s"
+        }.`,
       });
-
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({}));
-        throw new Error(error.error || "Error al subir imagen");
-      }
-
-      const data = await response.json();
-      setStatus({ type: "success", message: "Imagen actualizada correctamente" });
       setFile(null);
-      setSelectedBarcode("");
+      setSelectedGroup("");
       event.target.reset();
-      if (onImageUploaded) {
-        onImageUploaded(selectedBarcode, data.product?.imageUrl);
-      }
     } catch (error) {
       setStatus({ type: "error", message: error.message });
     }
@@ -52,16 +90,16 @@ function ProductImageManager({ products, onImageUploaded }) {
         <label>
           Producto
           <select
-            value={selectedBarcode}
-            onChange={(e) => {
-              setSelectedBarcode(e.target.value);
+            value={selectedGroup}
+            onChange={(event) => {
+              setSelectedGroup(event.target.value);
               setStatus(null);
             }}
           >
             <option value="">Selecciona un producto</option>
-            {sortedProducts.map((product) => (
-              <option key={product.barcode} value={product.barcode}>
-                {product.name} ({product.barcode})
+            {groupedProducts.map((group) => (
+              <option key={group.key} value={group.key}>
+                {group.displayName}
               </option>
             ))}
           </select>
@@ -72,8 +110,8 @@ function ProductImageManager({ products, onImageUploaded }) {
           <input
             type="file"
             accept="image/*"
-            onChange={(e) => {
-              setFile(e.target.files?.[0] || null);
+            onChange={(event) => {
+              setFile(event.target.files?.[0] || null);
               setStatus(null);
             }}
           />
@@ -92,6 +130,4 @@ function ProductImageManager({ products, onImageUploaded }) {
 }
 
 export default ProductImageManager;
-
-
 
