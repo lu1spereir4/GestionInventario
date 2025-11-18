@@ -26,8 +26,45 @@ const io = new Server(httpServer, {
 app.use(cors());
 app.use(express.json());
 
+const rawSyncInterval = Number(config.syncIntervalMs);
+const SYNC_INTERVAL_MS = Number.isFinite(rawSyncInterval) ? rawSyncInterval : 60_000;
+const NETWORK_RETRY_DELAY_MS = Math.min(15_000, Math.max(5_000, Math.floor(SYNC_INTERVAL_MS / 2)));
+const TRANSIENT_NETWORK_CODES = new Set([
+  'ENETUNREACH',
+  'EHOSTUNREACH',
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'EAI_AGAIN',
+  'ENOTFOUND',
+  'ETIMEDOUT',
+]);
+
 let syncing = false;
+let syncRetryTimer = null;
 let pendingVariablePriceScan = null;
+
+function isTransientNetworkError(error) {
+  if (!error) return false;
+  if (error.code && TRANSIENT_NETWORK_CODES.has(error.code)) return true;
+  if (error.code === 'ECONNABORTED' && /timeout/i.test(error.message || '')) return true;
+  if (!error.code && /timeout/i.test(error.message || '')) return true;
+  return false;
+}
+
+function clearSyncRetryTimer() {
+  if (syncRetryTimer) {
+    clearTimeout(syncRetryTimer);
+    syncRetryTimer = null;
+  }
+}
+
+function scheduleSyncRetry(delayMs = NETWORK_RETRY_DELAY_MS) {
+  if (syncRetryTimer) return;
+  syncRetryTimer = setTimeout(() => {
+    syncRetryTimer = null;
+    if (!syncing) triggerSync();
+  }, delayMs);
+}
 
 // Middleware para logs
 app.use((req, res, next) => {
@@ -155,6 +192,7 @@ function addScan(barcode) {
 
 async function triggerSync() {
   if (syncing) return;
+  clearSyncRetryTimer();
   const pending = getPendingScans();
   if (pending.length === 0) return;
 
@@ -230,8 +268,12 @@ async function triggerSync() {
       });
     }
   } catch (error) {
-    console.error('Error sincronizando:', error.message);
-    io.emit('sync-error', { message: error.message });
+    const codeSuffix = error.code ? ` (${error.code})` : '';
+    console.error('Error sincronizando:', `${error.message}${codeSuffix}`);
+    io.emit('sync-error', { message: error.message, code: error.code });
+    if (isTransientNetworkError(error)) {
+      scheduleSyncRetry();
+    }
   } finally {
     syncing = false;
   }
@@ -302,6 +344,6 @@ httpServer.listen(PORT, () => {
   `);
   
   // Sincronización periódica
-  setInterval(triggerSync, config.syncIntervalMs);
+  setInterval(triggerSync, SYNC_INTERVAL_MS);
   triggerSync();
 });
