@@ -277,8 +277,9 @@ function App() {
     );
   };
 
-  const totalItems = sales.reduce((sum, sale) => sum + (sale.quantity || 1), 0);
-  const totalPesos = sales.reduce((sum, sale) => sum + (sale.priceCents || 0), 0);
+  const salesForSummary = sales.filter((sale) => sale.status !== "rejected");
+  const totalItems = salesForSummary.reduce((sum, sale) => sum + (sale.quantity || 1), 0);
+  const totalPesos = salesForSummary.reduce((sum, sale) => sum + (sale.priceCents || 0), 0);
 
   const formatCurrency = (value) =>
     `$${Math.max(0, Math.round(value || 0)).toLocaleString("es-CL")}`;

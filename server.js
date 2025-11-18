@@ -23,6 +23,7 @@ import {
   updateScanPrice,
   getScanById,
   deleteScan,
+  setRemoteSaleId,
 } from './db.js';
 
 const app = express();
@@ -317,8 +318,15 @@ function handleSyncResult(result, pending, payloadScans = []) {
   }
 
   const accepted = new Set(result.acceptedIds || []);
+  const acceptedDetails = Array.isArray(result.accepted) ? result.accepted : [];
   const rejected = result.rejected || [];
   const variablePriceRequired = result.variablePriceRequired || [];
+
+  for (const entry of acceptedDetails) {
+    if (entry?.scanId && entry?.saleId) {
+      setRemoteSaleId(entry.scanId, entry.saleId);
+    }
+  }
 
   if (accepted.size) {
     const syncedAt = new Date().toISOString();
@@ -418,7 +426,7 @@ async function submitVariableScan(scan, product, priceCents) {
       ? scan.quantity
       : 1;
 
-  await axios.post(
+  const { data } = await axios.post(
     `${apiBase}/sales/varios`,
     {
       priceCents: toRemotePrice(priceCents),
@@ -427,6 +435,10 @@ async function submitVariableScan(scan, product, priceCents) {
     },
     { headers, timeout: 5000 },
   );
+  const remoteSaleId = data?.id || data?.sale?.id || null;
+  if (remoteSaleId) {
+    setRemoteSaleId(scan.id, remoteSaleId);
+  }
 
   const syncedAt = new Date().toISOString();
   markAsSynced([scan.id], syncedAt);
@@ -446,43 +458,25 @@ async function submitVariableScan(scan, product, priceCents) {
   return saleDto;
 }
 
-async function deleteRemoteSale(scan, product = null) {
+async function deleteRemoteSale(remoteSaleId) {
+  if (!remoteSaleId) {
+    throw new Error('remoteSaleId requerido para eliminar la venta remota');
+  }
   const headers = {};
   if (config.jwt) headers.Authorization = `Bearer ${config.jwt}`;
   const apiBase = config.apiBase.replace(/\/$/, '');
-  const pricingSource = {
-    pricingMode:
-      scan.pricing_mode ||
-      scan.pricingMode ||
-      product?.pricing_mode ||
-      product?.pricingMode,
-    category: scan.category || product?.category,
-    productName: scan.product_name || scan.productName || product?.name,
-  };
-  const isVarios = isVariablePricing(pricingSource);
-  const endpoints = isVarios
-    ? [`${apiBase}/sales/varios/${scan.id}`, `${apiBase}/sales/${scan.id}`]
-    : [`${apiBase}/sales/${scan.id}`];
-
-  for (let index = 0; index < endpoints.length; index += 1) {
-    const url = endpoints[index];
-    try {
-      await axios.delete(url, { headers, timeout: 5000 });
-      return { url };
-    } catch (error) {
-      const status = error.response?.status;
-      if (status === 404) {
-        if (index < endpoints.length - 1) {
-          continue;
-        }
-        console.warn(`Venta ${scan.id} no existe en el backend remoto (${url}).`);
-        return { url, skipped: true };
-      }
-      throw error;
+  const url = `${apiBase}/sales/${remoteSaleId}`;
+  try {
+    await axios.delete(url, { headers, timeout: 5000 });
+    return { url };
+  } catch (error) {
+    const status = error.response?.status;
+    if (status === 404) {
+      console.warn(`Venta ${remoteSaleId} no existe en el backend remoto (${url}).`);
+      return { url, skipped: true };
     }
+    throw error;
   }
-
-  return null;
 }
 
 function addScan(rawBarcode, source = 'stdin') {
@@ -649,9 +643,13 @@ app.use((req, _res, next) => {
 
 app.get('/api/sales/today', (_req, res) => {
   const sales = getTodaySales();
+  const countable = sales.filter((s) => (s.status || 'pending') !== 'rejected');
   const summary = {
-    totalItems: sales.reduce((sum, s) => sum + (s.quantity || 1), 0),
-    totalCents: sales.reduce((sum, s) => sum + (s.price_cents || 0), 0),
+    totalItems: countable.reduce((sum, s) => sum + (s.quantity || 1), 0),
+    totalCents: countable.reduce(
+      (sum, s) => sum + (s.price_cents || s.priceCents || 0),
+      0,
+    ),
     sales: sales.map((s) => mapScanToClient(s)),
   };
   res.json(summary);
@@ -672,11 +670,16 @@ app.delete('/api/sales/:id', async (req, res) => {
     return res.status(404).json({ error: 'Venta no encontrada' });
   }
 
-  const product = getCachedProduct(sale.barcode);
+  const remoteSaleId = sale.remote_sale_id;
 
   if (sale.status === 'synced') {
+    if (!remoteSaleId) {
+      return res
+        .status(409)
+        .json({ error: 'No se encontró el identificador remoto de la venta para eliminarla.' });
+    }
     try {
-      await deleteRemoteSale(sale, product);
+      await deleteRemoteSale(remoteSaleId);
     } catch (error) {
       const message = error.response?.data?.error || error.message;
       console.error(`Error eliminando la venta ${saleId} en el backend remoto:`, message);

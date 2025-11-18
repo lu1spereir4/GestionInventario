@@ -17,7 +17,8 @@ db.exec(`
     product_name TEXT,
     category TEXT,
     price_cents INTEGER,
-    image_path TEXT
+    image_path TEXT,
+    remote_sale_id TEXT
   );
 `);
 
@@ -27,6 +28,7 @@ if (!scanColumns.has('product_name')) db.exec(`ALTER TABLE scans ADD COLUMN prod
 if (!scanColumns.has('category')) db.exec(`ALTER TABLE scans ADD COLUMN category TEXT`);
 if (!scanColumns.has('price_cents')) db.exec(`ALTER TABLE scans ADD COLUMN price_cents INTEGER`);
 if (!scanColumns.has('image_path')) db.exec(`ALTER TABLE scans ADD COLUMN image_path TEXT`);
+if (!scanColumns.has('remote_sale_id')) db.exec(`ALTER TABLE scans ADD COLUMN remote_sale_id TEXT`);
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS products (
@@ -162,6 +164,12 @@ const deleteScanStmt = db.prepare(`
   DELETE FROM scans WHERE id = ?
 `);
 
+const updateRemoteSaleIdStmt = db.prepare(`
+  UPDATE scans
+  SET remote_sale_id = @remoteSaleId
+  WHERE id = @id
+`);
+
 export function saveScan(scan) {
   insertScanStmt.run({
     ...scan,
@@ -259,6 +267,11 @@ export function getScanById(id) {
 
 export function deleteScan(id) {
   deleteScanStmt.run(id);
+}
+
+export function setRemoteSaleId(id, remoteSaleId) {
+  if (!id || !remoteSaleId) return;
+  updateRemoteSaleIdStmt.run({ id, remoteSaleId });
 }
 
 
