@@ -43,7 +43,7 @@ fi
 
 if [ -z "${USB_SCANNER_DEVICE:-}" ]; then
   log "La variable USB_SCANNER_DEVICE no está definida."
-  log "Ejemplo: USB_SCANNER_DEVICE=/dev/input/event6"
+  log "Ejemplo: USB_SCANNER_DEVICE=/dev/input/event2"
   exit 1
 fi
 
@@ -74,3 +74,4 @@ trap cleanup INT TERM
 SERVER_PID=$!
 
 wait "$SERVER_PID"
+
