@@ -21,6 +21,8 @@ import {
   listProducts,
   updateProductImage,
   updateScanPrice,
+  getScanById,
+  deleteScan,
 } from './db.js';
 
 const app = express();
@@ -444,6 +446,45 @@ async function submitVariableScan(scan, product, priceCents) {
   return saleDto;
 }
 
+async function deleteRemoteSale(scan, product = null) {
+  const headers = {};
+  if (config.jwt) headers.Authorization = `Bearer ${config.jwt}`;
+  const apiBase = config.apiBase.replace(/\/$/, '');
+  const pricingSource = {
+    pricingMode:
+      scan.pricing_mode ||
+      scan.pricingMode ||
+      product?.pricing_mode ||
+      product?.pricingMode,
+    category: scan.category || product?.category,
+    productName: scan.product_name || scan.productName || product?.name,
+  };
+  const isVarios = isVariablePricing(pricingSource);
+  const endpoints = isVarios
+    ? [`${apiBase}/sales/varios/${scan.id}`, `${apiBase}/sales/${scan.id}`]
+    : [`${apiBase}/sales/${scan.id}`];
+
+  for (let index = 0; index < endpoints.length; index += 1) {
+    const url = endpoints[index];
+    try {
+      await axios.delete(url, { headers, timeout: 5000 });
+      return { url };
+    } catch (error) {
+      const status = error.response?.status;
+      if (status === 404) {
+        if (index < endpoints.length - 1) {
+          continue;
+        }
+        console.warn(`Venta ${scan.id} no existe en el backend remoto (${url}).`);
+        return { url, skipped: true };
+      }
+      throw error;
+    }
+  }
+
+  return null;
+}
+
 function addScan(rawBarcode, source = 'stdin') {
   const barcode = (rawBarcode || '').trim();
   if (!barcode) return;
@@ -618,6 +659,39 @@ app.get('/api/sales/today', (_req, res) => {
 
 app.get('/api/pending-variable-price', (_req, res) => {
   res.json(pendingVariablePriceScan || null);
+});
+
+app.delete('/api/sales/:id', async (req, res) => {
+  const saleId = (req.params.id || '').trim();
+  if (!saleId) {
+    return res.status(400).json({ error: 'ID de venta requerido' });
+  }
+
+  const sale = getScanById(saleId);
+  if (!sale) {
+    return res.status(404).json({ error: 'Venta no encontrada' });
+  }
+
+  const product = getCachedProduct(sale.barcode);
+
+  if (sale.status === 'synced') {
+    try {
+      await deleteRemoteSale(sale, product);
+    } catch (error) {
+      const message = error.response?.data?.error || error.message;
+      console.error(`Error eliminando la venta ${saleId} en el backend remoto:`, message);
+      return res.status(502).json({ error: message || 'Error eliminando venta en backend remoto' });
+    }
+  }
+
+  deleteScan(saleId);
+
+  if (pendingVariablePriceScan?.id === saleId) {
+    pendingVariablePriceScan = findPendingVariablePriceScan();
+  }
+
+  io.emit('sale-deleted', { id: saleId });
+  return res.json({ success: true });
 });
 
 app.get('/api/products', (_req, res) => {

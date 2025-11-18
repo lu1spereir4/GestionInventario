@@ -17,11 +17,25 @@ function App() {
   const [connected, setConnected] = useState(false);
   const [pendingVariablePrice, setPendingVariablePrice] = useState(null);
   const [products, setProducts] = useState([]);
+  const [deletingSaleIds, setDeletingSaleIds] = useState(() => new Set());
   const productsRef = useRef([]);
 
   useEffect(() => {
     productsRef.current = products;
   }, [products]);
+
+  const markSaleDeleting = (saleId, isDeleting) => {
+    if (!saleId) return;
+    setDeletingSaleIds((prev) => {
+      const next = new Set(prev);
+      if (isDeleting) {
+        next.add(saleId);
+      } else {
+        next.delete(saleId);
+      }
+      return next;
+    });
+  };
 
   const enrichSale = (sale, catalog) =>
     updateSaleWithCatalog(sale, catalog || productsRef.current);
@@ -141,6 +155,13 @@ function App() {
       alert(`Venta rechazada: ${rejection.reason}`);
     });
 
+    socket.on("sale-deleted", ({ id }) => {
+      if (!id) return;
+      setSales((prev) => prev.filter((sale) => sale.id !== id));
+      setPendingVariablePrice((prev) => (prev?.id === id ? null : prev));
+      markSaleDeleting(id, false);
+    });
+
     socket.on("sync-error", (error) => {
       console.error("Error de sincronización:", error);
     });
@@ -208,6 +229,42 @@ function App() {
     setPendingVariablePrice(null);
   };
 
+  const handleDeleteSale = async (sale) => {
+    if (!sale?.id) return;
+
+    const label = sale.productName || sale.barcode || "esta venta";
+    const confirmed = window.confirm(`¿Eliminar "${label}" de la lista?`);
+    if (!confirmed) return;
+
+    const saleId = sale.id;
+    markSaleDeleting(saleId, true);
+
+    try {
+      const response = await fetch(`/api/sales/${saleId}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        let errorMessage = "No se pudo eliminar la venta";
+        try {
+          const error = await response.json();
+          errorMessage = error.error || errorMessage;
+        } catch (_) {
+          // ignore body
+        }
+        throw new Error(errorMessage);
+      }
+
+      setSales((prev) => prev.filter((item) => item.id !== saleId));
+      setPendingVariablePrice((prev) => (prev?.id === saleId ? null : prev));
+    } catch (error) {
+      console.error("Error eliminando venta:", error);
+      alert(error.message || "No se pudo eliminar la venta");
+    } finally {
+      markSaleDeleting(saleId, false);
+    }
+  };
+
   const handleImageUploaded = (barcode, imageUrl) => {
     if (!barcode) return;
     setProducts((prev) => mergeProduct(prev, { barcode, imageUrl }));
@@ -254,7 +311,11 @@ function App() {
 
         <div className="sales-section">
           <h2>Ventas del día</h2>
-          <SalesList sales={sales} />
+          <SalesList
+            sales={sales}
+            onDeleteSale={handleDeleteSale}
+            deletingSaleIds={deletingSaleIds}
+          />
         </div>
       </main>
 

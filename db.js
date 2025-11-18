@@ -154,6 +154,14 @@ const updateScansImageStmt = db.prepare(`
   WHERE barcode = @barcode
 `);
 
+const selectScanByIdStmt = db.prepare(`
+  SELECT * FROM scans WHERE id = ?
+`);
+
+const deleteScanStmt = db.prepare(`
+  DELETE FROM scans WHERE id = ?
+`);
+
 export function saveScan(scan) {
   insertScanStmt.run({
     ...scan,
@@ -243,6 +251,14 @@ export function updateProductImage(barcode, imagePath) {
   const updatedAt = new Date().toISOString();
   updateProductImageStmt.run({ barcode, imagePath, updatedAt });
   updateScansImageStmt.run({ barcode, imagePath });
+}
+
+export function getScanById(id) {
+  return selectScanByIdStmt.get(id) || null;
+}
+
+export function deleteScan(id) {
+  deleteScanStmt.run(id);
 }
 
 
