@@ -148,7 +148,9 @@ function AnalyticsPanel() {
                 <div className="heatmap-grid">
                   {Array.from({ length: 15 }, (_, i) => {
                     const hour = i + 8; // 8 AM a 22 PM (10 PM)
-                    const hourData = analytics.hourlyData.find(h => h.hour === hour);
+                    // Ajustar hora UTC restando 3 horas (hour viene en UTC)
+                    const utcHour = (hour + 3) % 24; // Convertir hora local a UTC para buscar
+                    const hourData = analytics.hourlyData.find(h => h.hour === utcHour);
                     const count = hourData?.count || 0;
                     const maxCount = Math.max(...analytics.hourlyData.map(h => h.count || 0));
                     const color = getHeatColor(count, maxCount);
