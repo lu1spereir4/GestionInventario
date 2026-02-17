@@ -6,12 +6,29 @@ function ManualScanner({ products = [] }) {
   const [lastScan, setLastScan] = useState('');
   const [status, setStatus] = useState('ready'); // 'ready', 'sending'
   const inputRef = useRef(null);
+  const dropdownRef = useRef(null);
   const [showResults, setShowResults] = useState(false);
 
   // Auto-focus en el input cuando se monta el componente
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
+
+  // Click outside handler para cerrar dropdown
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setShowResults(false);
+      }
+    }
+
+    if (showResults) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+      };
+    }
+  }, [showResults]);
 
   // Filtrar productos según búsqueda
   const filteredProducts = searchTerm.trim().length > 0
@@ -105,7 +122,7 @@ function ManualScanner({ products = [] }) {
         )}
       </div>
       
-      <form onSubmit={handleSubmit} className="scanner-form">
+      <form onSubmit={handleSubmit} className="scanner-form" ref={dropdownRef}>
         <div className="search-container">
           <input
             ref={inputRef}

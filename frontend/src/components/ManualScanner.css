@@ -65,7 +65,7 @@
 
 .scanner-form {
   position: relative;
-  z-index: 10;
+  z-index: 100;
 }
 
 .search-container {
@@ -135,7 +135,7 @@
   min-height: 380px;
   max-height: 500px;
   overflow-y: auto;
-  z-index: 100;
+  z-index: 1000;
   animation: slideDown 0.2s ease-out;
 }
 
@@ -285,7 +285,7 @@
   padding: 1.5rem;
   text-align: center;
   color: #6b7280;
-  z-index: 100;
+  z-index: 1000;
   animation: slideDown 0.2s ease-out;
 }
 
