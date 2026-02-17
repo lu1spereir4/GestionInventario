@@ -937,6 +937,104 @@ app.post('/api/set-variable-price', async (req, res) => {
   }
 });
 
+// Analytics endpoints
+app.get('/api/analytics/summary', (_req, res) => {
+  try {
+    const db = getTodaySales()[0]?.constructor || require('better-sqlite3')('inventory-sync.db');
+    
+    const today = new Date().toISOString().split('T')[0];
+    
+    // Stats del día
+    const stats = db.prepare ? db.prepare(`
+      SELECT 
+        COUNT(*) as total_sales,
+        SUM(CASE WHEN status = 'synced' THEN 1 ELSE 0 END) as synced_count,
+        SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending_count,
+        SUM(value) as total_revenue,
+        AVG(value) as avg_sale
+      FROM scans 
+      WHERE DATE(timestamp) = ?
+    `).get(today) : null;
+    
+    // Producto más vendido
+    const topProduct = db.prepare ? db.prepare(`
+      SELECT barcode, product_name, COUNT(*) as count, SUM(value) as total
+      FROM scans
+      WHERE DATE(timestamp) = ?
+      GROUP BY barcode
+      ORDER BY count DESC
+      LIMIT 1
+    `).get(today) : null;
+    
+    // Ventas por hora
+    const hourlyData = db.prepare ? db.prepare(`
+      SELECT 
+        strftime('%H', timestamp) as hour,
+        COUNT(*) as count,
+        SUM(value) as total
+      FROM scans 
+      WHERE DATE(timestamp) = ?
+      GROUP BY hour
+      ORDER BY hour
+    `).all(today) : [];
+    
+    res.json({
+      summary: stats || {},
+      topProduct: topProduct || null,
+      hourlyData: hourlyData || []
+    });
+  } catch (error) {
+    console.error('Error en analytics:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/export/sales', (_req, res) => {
+  try {
+    const { from, to } = _req.query;
+    const startDate = from || new Date().toISOString().split('T')[0];
+    const endDate = to || startDate;
+    
+    const db = getTodaySales()[0]?.constructor || require('better-sqlite3')('inventory-sync.db');
+    
+    const sales = db.prepare ? db.prepare(`
+      SELECT 
+        timestamp,
+        barcode,
+        product_name,
+        category,
+        value,
+        status
+      FROM scans
+      WHERE DATE(timestamp) BETWEEN ? AND ?
+      ORDER BY timestamp DESC
+    `).all(startDate, endDate) : getTodaySales();
+    
+    // Convertir a CSV manualmente (simple)
+    const headers = ['Fecha/Hora', 'Código', 'Producto', 'Categoría', 'Precio', 'Estado'];
+    const rows = sales.map(s => [
+      s.timestamp,
+      s.barcode,
+      s.product_name || '',
+      s.category || '',
+      s.value || 0,
+      s.status
+    ]);
+    
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+    ].join('\n');
+    
+    res.header('Content-Type', 'text/csv; charset=utf-8');
+    res.header('Content-Disposition', `attachment; filename="ventas-${startDate}-${endDate}.csv"`);
+    res.send('\ufeff' + csvContent); // UTF-8 BOM para Excel
+  } catch (error) {
+    console.error('Error exportando:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.use((error, _req, res, _next) => {
   console.error('Error en la API:', error);
   res.status(500).json({ error: error.message || 'Error interno' });

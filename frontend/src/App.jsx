@@ -9,6 +9,7 @@ import ScannerToggle from "./components/ScannerToggle";
 import ProductImageManager from "./components/ProductImageManager";
 import ConfirmDialog from "./components/ConfirmDialog";
 import Toast from "./components/Toast";
+import AnalyticsPanel from "./components/AnalyticsPanel";
 import { useToast } from "./hooks/useToast";
 
 const SOCKET_URL = window.location.hostname === "localhost"
@@ -393,6 +394,8 @@ function App() {
           />
         ))}
       </div>
+
+      <AnalyticsPanel />
     </div>
   );
 }
