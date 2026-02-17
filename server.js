@@ -780,6 +780,37 @@ app.post('/api/scan', (req, res) => {
   res.json({ success: true, barcode: barcode.trim() });
 });
 
+app.post('/api/cancel-variable-price', (req, res) => {
+  const { scanId } = req.body || {};
+
+  if (!scanId) {
+    return res.status(400).json({ error: 'scanId requerido' });
+  }
+
+  if (!pendingVariablePriceScan || pendingVariablePriceScan.id !== scanId) {
+    console.warn(`Intento de cancelar scan ${scanId} que no está pendiente`);
+    return res.json({ success: true, message: 'Ya no está pendiente' });
+  }
+
+  console.log(`🚫 Cancelando precio variable para scan ${scanId}`);
+  
+  // Eliminar el scan de la base de datos
+  try {
+    deleteScan(scanId);
+    console.log(`   Scan ${scanId} eliminado de la base de datos`);
+  } catch (error) {
+    console.warn(`   Error eliminando scan ${scanId}:`, error.message);
+  }
+
+  // Limpiar el pendiente del servidor
+  pendingVariablePriceScan = null;
+
+  // Notificar a todos los clientes
+  io.emit('sale-deleted', { id: scanId });
+
+  return res.json({ success: true, message: 'Precio variable cancelado' });
+});
+
 app.post('/api/set-variable-price', async (req, res) => {
   const { scanId, priceCents } = req.body || {};
 

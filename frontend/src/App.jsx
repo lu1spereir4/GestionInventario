@@ -225,8 +225,32 @@ function App() {
     }
   };
 
-  const handleVariablePriceCancel = () => {
-    setPendingVariablePrice(null);
+  const handleVariablePriceCancel = async () => {
+    if (!pendingVariablePrice) return;
+
+    try {
+      const response = await fetch("/api/cancel-variable-price", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          scanId: pendingVariablePrice.id,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Error al cancelar");
+      }
+
+      setPendingVariablePrice(null);
+      console.log("✅ Precio variable cancelado correctamente");
+    } catch (error) {
+      console.error("Error cancelando precio variable:", error);
+      // Aún así limpiamos el estado local para no bloquear la UI
+      setPendingVariablePrice(null);
+    }
   };
 
   const handleDeleteSale = async (sale) => {
