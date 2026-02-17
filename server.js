@@ -144,6 +144,32 @@ function hydrateProductCache() {
 
 hydrateProductCache();
 
+function cleanupInvalidScans() {
+  const MIN_BARCODE_LENGTH = 6;
+  try {
+    const pending = getPendingScans();
+    let cleanedCount = 0;
+    
+    for (const scan of pending) {
+      if (!scan.barcode || scan.barcode.length < MIN_BARCODE_LENGTH) {
+        console.warn(`🧹 Limpiando scan inválido: ID=${scan.id}, barcode="${scan.barcode || ''}" (longitud: ${(scan.barcode || '').length})`);
+        markAsRejected(scan.id);
+        persistRejected({
+          id: scan.id,
+          reason: `Código inválido: demasiado corto (${(scan.barcode || '').length} caracteres)`,
+        });
+        cleanedCount++;
+      }
+    }
+    
+    if (cleanedCount > 0) {
+      console.log(`✅ Se limpiaron ${cleanedCount} scan(s) inválido(s)`);
+    }
+  } catch (error) {
+    console.warn('Error durante limpieza de scans inválidos:', error.message);
+  }
+}
+
 function isTransientNetworkError(error) {
   if (!error) return false;
   if (error.code && TRANSIENT_NETWORK_CODES.has(error.code)) return true;
@@ -520,6 +546,17 @@ function addScan(rawBarcode, source = 'stdin') {
   const barcode = (rawBarcode || '').trim();
   if (!barcode) return;
 
+  // Validación: rechazar códigos demasiado cortos (backend requiere mínimo 6 caracteres)
+  const MIN_BARCODE_LENGTH = 6;
+  if (barcode.length < MIN_BARCODE_LENGTH) {
+    console.warn(`⚠️  Código inválido rechazado: "${barcode}" (longitud: ${barcode.length}, mínimo: ${MIN_BARCODE_LENGTH})`);
+    io.emit('scan-rejected', {
+      barcode,
+      reason: `Código demasiado corto (${barcode.length} caracteres, mínimo ${MIN_BARCODE_LENGTH})`,
+    });
+    return;
+  }
+
   const now = new Date().toISOString();
   const product = getCachedProduct(barcode);
   const pricingMode = product?.pricing_mode ?? product?.pricingMode ?? null;
@@ -662,9 +699,43 @@ async function triggerSync() {
     const message = responseData?.error || error.message;
     const codeSuffix = error.code ? ` (${error.code})` : '';
     console.error('Error sincronizando:', `${message}${codeSuffix}`, responseData || '');
-    if (responseData) {
+    
+    // Manejo especial para errores de validación
+    if (responseData?.error === 'VALIDATION_ERROR' && Array.isArray(responseData?.details)) {
+      console.warn('⚠️  Error de validación detectado. Marcando scans problemáticos como rechazados.');
+      
+      // Si el error es de validación en scans[0], rechazar el primer scan del payload
+      for (const detail of responseData.details) {
+        if (detail.path && detail.path[0] === 'scans' && typeof detail.path[1] === 'number') {
+          const scanIndex = detail.path[1];
+          if (payloadScans[scanIndex]) {
+            const problematicScan = payloadScans[scanIndex];
+            console.warn(`   Rechazando scan ${problematicScan.id} (barcode: "${problematicScan.barcode}"): ${detail.message}`);
+            markAsRejected(problematicScan.id);
+            persistRejected({
+              id: problematicScan.id,
+              reason: `Validación fallida: ${detail.message}`,
+            });
+            io.emit('sale-rejected', {
+              id: problematicScan.id,
+              reason: `Validación fallida: ${detail.message}`,
+            });
+            
+            const rejectedScan = pending.find((item) => item.id === problematicScan.id);
+            if (rejectedScan) {
+              broadcastSale(
+                { ...rejectedScan, status: 'rejected' },
+                getCachedProduct(rejectedScan.barcode),
+                'rejected',
+              );
+            }
+          }
+        }
+      }
+    } else if (responseData) {
       handleSyncResult(responseData, pending);
     }
+    
     io.emit('sync-error', { message, details: responseData });
     if (isTransientNetworkError(error)) {
       scheduleSyncRetry();
@@ -918,6 +989,7 @@ httpServer.listen(PORT, () => {
   console.log('  WebSocket: activo');
   console.log('==========================================');
 
+  cleanupInvalidScans();
   loadProductCatalog();
   setInterval(loadProductCatalog, config.catalogRefreshMs);
   setInterval(triggerSync, SYNC_INTERVAL_MS);
