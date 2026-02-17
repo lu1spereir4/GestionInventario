@@ -996,7 +996,7 @@ app.get('/api/export/sales', (_req, res) => {
       let timestamp = s.scanned_at || '';
       if (timestamp) {
         const utcDate = new Date(timestamp);
-        const localDate = new Date(utcDate.getTime() - 3 * 60 * 60 * 1000);
+        const localDate = new Date(utcDate.getTime());
         timestamp = localDate.toISOString();
       }
       
