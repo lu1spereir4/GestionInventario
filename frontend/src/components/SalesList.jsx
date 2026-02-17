@@ -4,9 +4,13 @@ function SalesList({ sales, onDeleteSale, deletingSaleIds }) {
   if (!sales.length) {
     return (
       <div className="empty-state">
-        <div className="empty-icon">??</div>
+        <div className="empty-icon">
+          <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+            <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        </div>
         <p>No hay ventas registradas hoy</p>
-        <p className="empty-subtitle">Los productos escaneados aparecer�n aqu�</p>
+        <p className="empty-subtitle">Los productos escaneados aparecerán aquí</p>
       </div>
     );
   }
@@ -61,16 +65,16 @@ function SaleItem({ sale, onDelete, isDeleting }) {
 
   const getCategoryEmoji = (category) => {
     const emojis = {
-      bebida_latas: "??",
-      pasteleria: "??",
-      selladitos: "??",
-      cafeteria: "??",
-      pastillas: "??",
-      papas_fritas_cajita: "??",
-      bebidas_energeticas: "??",
-      varios: "??",
+      bebida_latas: "🥤",
+      pasteleria: "🍰",
+      selladitos: "🍪",
+      cafeteria: "☕",
+      pastillas: "💊",
+      papas_fritas_cajita: "🍟",
+      bebidas_energeticas: "⚡",
+      varios: "📦",
     };
-    return emojis[category] || "??";
+    return emojis[category] || "📦";
   };
 
   const status = sale.status || "pending";

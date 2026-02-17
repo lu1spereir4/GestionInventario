@@ -7,6 +7,7 @@ import VariablePriceModal from "./components/VariablePriceModel";
 import ConnectionStatus from "./components/ConnectionStatus";
 import ScannerToggle from "./components/ScannerToggle";
 import ProductImageManager from "./components/ProductImageManager";
+import ConfirmDialog from "./components/ConfirmDialog";
 
 const SOCKET_URL = window.location.hostname === "localhost"
   ? "http://localhost:3001"
@@ -18,6 +19,7 @@ function App() {
   const [pendingVariablePrice, setPendingVariablePrice] = useState(null);
   const [products, setProducts] = useState([]);
   const [deletingSaleIds, setDeletingSaleIds] = useState(() => new Set());
+  const [confirmDialog, setConfirmDialog] = useState({ isOpen: false, sale: null });
   const productsRef = useRef([]);
 
   useEffect(() => {
@@ -256,9 +258,16 @@ function App() {
   const handleDeleteSale = async (sale) => {
     if (!sale?.id) return;
 
-    const label = sale.productName || sale.barcode || "esta venta";
-    const confirmed = window.confirm(`¿Eliminar "${label}" de la lista?`);
-    if (!confirmed) return;
+    // Abrir el modal de confirmación
+    setConfirmDialog({ isOpen: true, sale });
+  };
+
+  const confirmDelete = async () => {
+    const sale = confirmDialog.sale;
+    if (!sale?.id) return;
+
+    // Cerrar modal
+    setConfirmDialog({ isOpen: false, sale: null });
 
     const saleId = sale.id;
     markSaleDeleting(saleId, true);
@@ -287,6 +296,10 @@ function App() {
     } finally {
       markSaleDeleting(saleId, false);
     }
+  };
+
+  const cancelDelete = () => {
+    setConfirmDialog({ isOpen: false, sale: null });
   };
 
   const handleImageUploaded = (barcode, imageUrl) => {
@@ -351,6 +364,14 @@ function App() {
           onCancel={handleVariablePriceCancel}
         />
       )}
+
+      <ConfirmDialog
+        isOpen={confirmDialog.isOpen}
+        title="¿Eliminar producto?"
+        message={`¿Estás seguro de que deseas eliminar "${confirmDialog.sale?.productName || confirmDialog.sale?.barcode || 'este producto'}" de la lista?`}
+        onConfirm={confirmDelete}
+        onCancel={cancelDelete}
+      />
     </div>
   );
 }
