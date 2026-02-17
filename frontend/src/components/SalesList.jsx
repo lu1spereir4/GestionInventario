@@ -55,7 +55,7 @@ function SaleItem({ sale, onDelete, isDeleting }) {
 
   const formatTime = (isoString) => {
     const utcDate = new Date(isoString);
-    const localDate = new Date(utcDate.getTime() + 3 * 60 * 60 * 1000);
+    const localDate = new Date(utcDate.getTime());
     return localDate.toLocaleTimeString("es-ES", {
       hour: "2-digit",
       minute: "2-digit",
