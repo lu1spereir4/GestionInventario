@@ -56,8 +56,8 @@
 }
 
 .sale-image {
-  width: 80px;
-  height: 80px;
+  width: 100px;
+  height: 100px;
   border-radius: var(--radius-md);
   overflow: hidden;
   background: linear-gradient(135deg, var(--gray-100), var(--gray-200));
@@ -67,6 +67,20 @@
   flex-shrink: 0;
   box-shadow: var(--shadow-sm);
   transition: transform var(--transition-base);
+}
+
+@media (min-width: 768px) {
+  .sale-image {
+    width: 120px;
+    height: 120px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .sale-image {
+    width: 140px;
+    height: 140px;
+  }
 }
 
 .sale-item:hover .sale-image {
