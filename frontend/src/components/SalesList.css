@@ -1,7 +1,7 @@
 ﻿.sales-list {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 1.5rem;
   max-height: 650px;
   overflow-y: auto;
   padding-right: 0.5rem;
@@ -10,8 +10,9 @@
 .sale-item {
   display: flex;
   align-items: center;
-  gap: 1.25rem;
-  padding: 1.25rem;
+  gap: 2rem;
+  padding: 2rem;
+  min-height: 180px;
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(249, 250, 251, 0.9) 100%);
   border-radius: var(--radius-lg);
   border: 1px solid rgba(229, 231, 235, 0.8);
@@ -56,8 +57,8 @@
 }
 
 .sale-image {
-  width: 100px;
-  height: 100px;
+  width: 140px;
+  height: 140px;
   border-radius: var(--radius-md);
   overflow: hidden;
   background: linear-gradient(135deg, var(--gray-100), var(--gray-200));
@@ -71,15 +72,15 @@
 
 @media (min-width: 768px) {
   .sale-image {
-    width: 120px;
-    height: 120px;
+    width: 160px;
+    height: 160px;
   }
 }
 
 @media (min-width: 1024px) {
   .sale-image {
-    width: 140px;
-    height: 140px;
+    width: 180px;
+    height: 180px;
   }
 }
 
@@ -94,7 +95,7 @@
 }
 
 .sale-placeholder {
-  font-size: 2.25rem;
+  font-size: 3rem;
   line-height: 1;
   filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1));
 }
@@ -107,7 +108,7 @@
 .sale-name {
   font-weight: 700;
   color: var(--gray-900);
-  font-size: 1.0625rem;
+  font-size: 1.25rem;
   margin-bottom: 0.5rem;
   white-space: nowrap;
   overflow: hidden;
@@ -118,7 +119,7 @@
 .sale-meta {
   display: flex;
   gap: 0.875rem;
-  font-size: 0.875rem;
+  font-size: 1rem;
   color: var(--gray-600);
   flex-wrap: wrap;
   align-items: center;
@@ -158,7 +159,7 @@
 }
 
 .sale-price {
-  font-size: 1.375rem;
+  font-size: 1.75rem;
   font-weight: 800;
   color: var(--success);
   flex-shrink: 0;
