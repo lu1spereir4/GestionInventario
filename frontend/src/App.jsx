@@ -8,6 +8,8 @@ import ConnectionStatus from "./components/ConnectionStatus";
 import ScannerToggle from "./components/ScannerToggle";
 import ProductImageManager from "./components/ProductImageManager";
 import ConfirmDialog from "./components/ConfirmDialog";
+import Toast from "./components/Toast";
+import { useToast } from "./hooks/useToast";
 
 const SOCKET_URL = window.location.hostname === "localhost"
   ? "http://localhost:3001"
@@ -20,6 +22,7 @@ function App() {
   const [products, setProducts] = useState([]);
   const [deletingSaleIds, setDeletingSaleIds] = useState(() => new Set());
   const [confirmDialog, setConfirmDialog] = useState({ isOpen: false, sale: null });
+  const { toasts, addToast, removeToast } = useToast();
   const productsRef = useRef([]);
 
   useEffect(() => {
@@ -266,6 +269,8 @@ function App() {
     const sale = confirmDialog.sale;
     if (!sale?.id) return;
 
+    const productName = sale.productName || sale.barcode || 'Producto';
+
     // Cerrar modal
     setConfirmDialog({ isOpen: false, sale: null });
 
@@ -290,9 +295,13 @@ function App() {
 
       setSales((prev) => prev.filter((item) => item.id !== saleId));
       setPendingVariablePrice((prev) => (prev?.id === saleId ? null : prev));
+      
+      // Mostrar notificación de éxito
+      addToast(`"${productName}" eliminado correctamente`, 'success');
     } catch (error) {
       console.error("Error eliminando venta:", error);
-      alert(error.message || "No se pudo eliminar la venta");
+      // Mostrar notificación de error
+      addToast(error.message || "No se pudo eliminar la venta", 'error');
     } finally {
       markSaleDeleting(saleId, false);
     }
@@ -372,6 +381,18 @@ function App() {
         onConfirm={confirmDelete}
         onCancel={cancelDelete}
       />
+
+      <div className="toast-container">
+        {toasts.map(toast => (
+          <Toast
+            key={toast.id}
+            message={toast.message}
+            type={toast.type}
+            duration={toast.duration}
+            onClose={() => removeToast(toast.id)}
+          />
+        ))}
+      </div>
     </div>
   );
 }
