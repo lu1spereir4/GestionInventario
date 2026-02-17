@@ -950,24 +950,24 @@ app.get('/api/analytics/summary', (_req, res) => {
     const topProduct = getTopProduct(today);
     const hourlyData = getHourlyData(today);
     
-    // Convertir centavos a pesos
+    // Los valores ya están en pesos (no en centavos)
     const summary = stats ? {
       total_sales: stats.total_sales || 0,
       synced_count: stats.synced_count || 0,
       pending_count: stats.pending_count || 0,
-      total_revenue: Math.round((stats.total_revenue_cents || 0) / 100),
-      avg_sale: Math.round((stats.avg_sale_cents || 0) / 100)
+      total_revenue: Math.round(stats.total_revenue_cents || 0),
+      avg_sale: Math.round(stats.avg_sale_cents || 0)
     } : {};
     
     const top = topProduct ? {
       ...topProduct,
-      total: Math.round((topProduct.total_cents || 0) / 100)
+      total: Math.round(topProduct.total_cents || 0)
     } : null;
     
     const hourly = (hourlyData || []).map(h => ({
       hour: h.hour,
       count: h.count,
-      total: Math.round((h.total_cents || 0) / 100)
+      total: Math.round(h.total_cents || 0)
     }));
     
     res.json({
@@ -989,16 +989,26 @@ app.get('/api/export/sales', (_req, res) => {
     
     const sales = getSalesForExport(startDate, endDate);
     
-    // Convertir a CSV manualmente (simple)
+    // Convertir a CSV manualmente con ajuste de timezone
     const headers = ['Fecha/Hora', 'Código', 'Producto', 'Categoría', 'Precio', 'Estado'];
-    const rows = sales.map(s => [
-      s.scanned_at || '',
-      s.barcode || '',
-      s.product_name || '',
-      s.category || '',
-      Math.round((s.price_cents || 0) / 100),
-      s.status || ''
-    ]);
+    const rows = sales.map(s => {
+      // Ajustar timestamp UTC a hora local (-3 horas)
+      let timestamp = s.scanned_at || '';
+      if (timestamp) {
+        const utcDate = new Date(timestamp);
+        const localDate = new Date(utcDate.getTime() - 3 * 60 * 60 * 1000);
+        timestamp = localDate.toISOString();
+      }
+      
+      return [
+        timestamp,
+        s.barcode || '',
+        s.product_name || '',
+        s.category || '',
+        Math.round(s.price_cents || 0),
+        s.status || ''
+      ];
+    });
     
     const csvContent = [
       headers.join(','),
