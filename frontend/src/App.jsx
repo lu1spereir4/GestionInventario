@@ -327,7 +327,7 @@ function App() {
           />
         </div>
 
-        <ScannerToggle />
+        <ScannerToggle products={products} />
 
         <ProductImageManager
           products={products}

@@ -1,32 +1,31 @@
 import { useState, useEffect, useRef } from 'react';
 import './ManualScanner.css';
 
-function ManualScanner() {
-  const [barcode, setBarcode] = useState('');
+function ManualScanner({ products = [] }) {
+  const [searchTerm, setSearchTerm] = useState('');
   const [lastScan, setLastScan] = useState('');
-  const [status, setStatus] = useState('ready'); // 'ready', 'scanning', 'sending'
+  const [status, setStatus] = useState('ready'); // 'ready', 'sending'
   const inputRef = useRef(null);
-  const timeoutRef = useRef(null);
+  const [showResults, setShowResults] = useState(false);
 
   // Auto-focus en el input cuando se monta el componente
   useEffect(() => {
     inputRef.current?.focus();
-    
-    // Mantener el foco siempre en el input
-    const handleClickAnywhere = () => {
-      inputRef.current?.focus();
-    };
-    
-    document.addEventListener('click', handleClickAnywhere);
-    
-    return () => {
-      document.removeEventListener('click', handleClickAnywhere);
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    };
   }, []);
 
+  // Filtrar productos según búsqueda
+  const filteredProducts = searchTerm.trim().length > 0
+    ? products.filter(product => {
+        const search = searchTerm.toLowerCase();
+        const name = (product.name || '').toLowerCase();
+        const barcode = (product.barcode || '').toLowerCase();
+        const category = (product.category || '').toLowerCase();
+        return name.includes(search) || barcode.includes(search) || category.includes(search);
+      }).slice(0, 8) // Limitar a 8 resultados
+    : [];
+
   const sendBarcode = async (code) => {
-    if (!code.trim() || code === lastScan) return;
+    if (!code.trim()) return;
 
     setStatus('sending');
     setLastScan(code);
@@ -47,95 +46,133 @@ function ManualScanner() {
       console.log('✅ Código enviado:', code);
       setStatus('ready');
       
-      // Limpiar después de 500ms
+      // Resetear lastScan después de 2 segundos (previene duplicados accidentales inmediatos)
       setTimeout(() => {
-        setBarcode('');
+        setLastScan('');
+      }, 2000);
+      
+      // Re-enfocar el input
+      setTimeout(() => {
         inputRef.current?.focus();
-      }, 500);
+      }, 100);
     } catch (error) {
       console.error('Error:', error);
       setStatus('error');
       setTimeout(() => {
         setStatus('ready');
-        setBarcode('');
+        setLastScan('');
+        inputRef.current?.focus();
       }, 2000);
     }
   };
 
-  const handleChange = (e) => {
+  const handleSearchChange = (e) => {
     const value = e.target.value;
-    setBarcode(value);
-    setStatus('scanning');
+    setSearchTerm(value);
+    setShowResults(value.trim().length > 0);
+  };
 
-    // Limpiar timeout previo
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-    }
-
-    // Auto-enviar después de 100ms sin nuevas teclas (el escáner es rápido)
-    timeoutRef.current = setTimeout(() => {
-      if (value.trim().length > 0) {
-        sendBarcode(value);
-      }
-    }, 150);
+  const handleProductClick = (product) => {
+    sendBarcode(product.barcode);
+    setSearchTerm('');
+    setShowResults(false);
   };
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
+    
+    // Si hay exactamente un resultado, escanearlo
+    if (filteredProducts.length === 1) {
+      handleProductClick(filteredProducts[0]);
     }
-    if (barcode.trim()) {
-      sendBarcode(barcode);
-    }
-  };
-
-  const getStatusIcon = () => {
-    switch (status) {
-      case 'scanning':
-        return '📷';
-      case 'sending':
-        return '📤';
-      case 'error':
-        return '❌';
-      default:
-        return '✅';
-    }
-  };
-
-  const getStatusText = () => {
-    switch (status) {
-      case 'scanning':
-        return 'Escaneando...';
-      case 'sending':
-        return 'Enviando...';
-      case 'error':
-        return 'Error';
-      default:
-        return 'Listo para escanear';
+    // Si el término de búsqueda parece un código de barras (solo números/letras), escanearlo directamente
+    else if (searchTerm.trim().length >= 6) {
+      sendBarcode(searchTerm.trim());
+      setSearchTerm('');
+      setShowResults(false);
     }
   };
 
   return (
     <div className="manual-scanner">
       <div className="scanner-status">
-        <span className="status-icon">{getStatusIcon()}</span>
-        <span className="status-text">{getStatusText()}</span>
+        <span className="status-icon">{status === 'sending' ? '📤' : '✅'}</span>
+        <span className="status-text">
+          {status === 'sending' ? 'Enviando...' : 'Buscar o escanear producto'}
+        </span>
         {lastScan && (
           <span className="last-scan">Último: {lastScan}</span>
         )}
       </div>
+      
       <form onSubmit={handleSubmit} className="scanner-form">
-        <input
-          ref={inputRef}
-          type="text"
-          value={barcode}
-          onChange={handleChange}
-          placeholder="� Foco aquí para escanear..."
-          className="scanner-input"
-          autoFocus
-          autoComplete="off"
-        />
+        <div className="search-container">
+          <input
+            ref={inputRef}
+            type="text"
+            value={searchTerm}
+            onChange={handleSearchChange}
+            placeholder="🔍 Buscar producto o escanear código..."
+            className="scanner-input"
+            autoFocus
+            autoComplete="off"
+          />
+          {searchTerm && (
+            <button
+              type="button"
+              className="clear-search-btn"
+              onClick={() => {
+                setSearchTerm('');
+                setShowResults(false);
+                inputRef.current?.focus();
+              }}
+            >
+              ✕
+            </button>
+          )}
+        </div>
+        
+        {showResults && filteredProducts.length > 0 && (
+          <div className="products-dropdown">
+            {filteredProducts.map((product) => (
+              <button
+                key={product.barcode}
+                type="button"
+                className="product-item"
+                onClick={() => handleProductClick(product)}
+              >
+                <div className="product-image">
+                  {product.imageUrl ? (
+                    <img src={product.imageUrl} alt={product.name} loading="lazy" />
+                  ) : (
+                    <span className="product-placeholder">📦</span>
+                  )}
+                </div>
+                <div className="product-info">
+                  <div className="product-name">{product.name || product.barcode}</div>
+                  <div className="product-details">
+                    <span className="product-barcode">{product.barcode}</span>
+                    {product.category && (
+                      <span className="product-category">{product.category}</span>
+                    )}
+                  </div>
+                </div>
+                {product.defaultPriceCents > 0 && (
+                  <div className="product-price">
+                    ${Math.round(product.defaultPriceCents).toLocaleString('es-CL')}
+                  </div>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
+        
+        {showResults && filteredProducts.length === 0 && (
+          <div className="no-results">
+            <span>No se encontraron productos</span>
+            <small>Presiona Enter para escanear como código directo</small>
+          </div>
+        )}
       </form>
     </div>
   );

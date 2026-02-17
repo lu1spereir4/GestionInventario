@@ -2,7 +2,7 @@ import { useState } from 'react';
 import ManualScanner from './ManualScanner';
 import './ScannerToggle.css';
 
-function ScannerToggle() {
+function ScannerToggle({ products = [] }) {
   const [showScanner, setShowScanner] = useState(false);
 
   return (
@@ -27,7 +27,7 @@ function ScannerToggle() {
               ✕
             </button>
           </div>
-          <ManualScanner />
+          <ManualScanner products={products} />
         </div>
       )}
     </div>
