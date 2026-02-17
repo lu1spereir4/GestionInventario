@@ -1,8 +1,8 @@
 ﻿.sales-list {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
-  max-height: 600px;
+  gap: 1rem;
+  max-height: 650px;
   overflow-y: auto;
   padding-right: 0.5rem;
 }
@@ -10,19 +10,33 @@
 .sale-item {
   display: flex;
   align-items: center;
-  gap: 1rem;
-  padding: 1rem;
-  background: var(--gray-50);
-  border-radius: 8px;
-  border: 1px solid var(--gray-200);
-  transition: all 0.2s;
-  animation: slideIn 0.3s ease-out;
+  gap: 1.25rem;
+  padding: 1.25rem;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(249, 250, 251, 0.9) 100%);
+  border-radius: var(--radius-lg);
+  border: 1px solid rgba(229, 231, 235, 0.8);
+  transition: all var(--transition-base);
+  animation: slideIn 0.4s ease-out;
+  position: relative;
+  overflow: hidden;
+}
+
+.sale-item::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 4px;
+  height: 100%;
+  background: linear-gradient(180deg, var(--primary), var(--secondary));
+  opacity: 0;
+  transition: opacity var(--transition-base);
 }
 
 @keyframes slideIn {
   from {
     opacity: 0;
-    transform: translateX(-20px);
+    transform: translateX(-30px);
   }
   to {
     opacity: 1;
@@ -31,21 +45,32 @@
 }
 
 .sale-item:hover {
-  background: white;
-  border-color: var(--primary);
-  transform: translateX(4px);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 1) 0%, rgba(249, 250, 251, 1) 100%);
+  border-color: var(--primary-light);
+  transform: translateX(6px);
+  box-shadow: var(--shadow-md);
+}
+
+.sale-item:hover::before {
+  opacity: 1;
 }
 
 .sale-image {
-  width: 72px;
-  height: 72px;
-  border-radius: 8px;
+  width: 80px;
+  height: 80px;
+  border-radius: var(--radius-md);
   overflow: hidden;
-  background: var(--gray-200);
+  background: linear-gradient(135deg, var(--gray-100), var(--gray-200));
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--transition-base);
+}
+
+.sale-item:hover .sale-image {
+  transform: scale(1.05);
 }
 
 .sale-image img {
@@ -55,8 +80,9 @@
 }
 
 .sale-placeholder {
-  font-size: 2rem;
+  font-size: 2.25rem;
   line-height: 1;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1));
 }
 
 .sale-details {
@@ -65,56 +91,65 @@
 }
 
 .sale-name {
-  font-weight: 600;
+  font-weight: 700;
   color: var(--gray-900);
-  font-size: 1rem;
-  margin-bottom: 0.25rem;
+  font-size: 1.0625rem;
+  margin-bottom: 0.5rem;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  letter-spacing: -0.01em;
 }
 
 .sale-meta {
   display: flex;
-  gap: 0.75rem;
+  gap: 0.875rem;
   font-size: 0.875rem;
   color: var(--gray-600);
   flex-wrap: wrap;
+  align-items: center;
 }
 
 .sale-quantity {
-  font-weight: 500;
+  font-weight: 600;
+  color: var(--gray-700);
 }
 
 .sale-status {
-  padding: 0.15rem 0.5rem;
+  padding: 0.25rem 0.625rem;
   border-radius: 999px;
-  font-size: 0.75rem;
-  font-weight: 600;
+  font-size: 0.6875rem;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.05em;
+  box-shadow: var(--shadow-sm);
 }
 
 .sale-status-pending {
-  background: rgba(234, 179, 8, 0.12);
-  color: #b45f06;
+  background: linear-gradient(135deg, #fef3c7, #fde68a);
+  color: #92400e;
+  border: 1px solid #fcd34d;
 }
 
 .sale-status-synced {
-  background: rgba(34, 197, 94, 0.12);
-  color: #166534;
+  background: linear-gradient(135deg, #d1fae5, #a7f3d0);
+  color: #065f46;
+  border: 1px solid #6ee7b7;
 }
 
 .sale-status-rejected {
-  background: rgba(248, 113, 113, 0.18);
+  background: linear-gradient(135deg, #fee2e2, #fecaca);
   color: #991b1b;
+  border: 1px solid #fca5a5;
 }
 
 .sale-price {
-  font-size: 1.25rem;
-  font-weight: 700;
+  font-size: 1.375rem;
+  font-weight: 800;
   color: var(--success);
   flex-shrink: 0;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  letter-spacing: -0.01em;
 }
 
 .sale-actions {
@@ -124,75 +159,92 @@
 }
 
 .sale-delete-button {
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
-  border: 1px solid var(--gray-200);
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  border: 1.5px solid var(--gray-200);
   background: white;
   color: var(--gray-500);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all var(--transition-fast);
+  font-size: 1.125rem;
 }
 
 .sale-delete-button:hover {
-  border-color: #ef4444;
-  color: #ef4444;
-  background: rgba(239, 68, 68, 0.05);
+  border-color: var(--danger);
+  color: white;
+  background: var(--danger);
+  transform: scale(1.1);
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+}
+
+.sale-delete-button:active {
+  transform: scale(0.95);
 }
 
 .sale-delete-button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+  transform: none;
 }
 
 .empty-state {
   text-align: center;
-  padding: 3rem 1rem;
+  padding: 4rem 1.5rem;
   color: var(--gray-600);
 }
 
 .empty-icon {
-  font-size: 4rem;
-  margin-bottom: 1rem;
-  opacity: 0.5;
+  font-size: 5rem;
+  margin-bottom: 1.5rem;
+  opacity: 0.4;
+  filter: grayscale(50%);
 }
 
 .empty-state p {
-  font-size: 1.125rem;
+  font-size: 1.25rem;
+  font-weight: 600;
   margin: 0.5rem 0;
+  color: var(--gray-700);
 }
 
 .empty-subtitle {
-  font-size: 0.875rem;
+  font-size: 0.9375rem;
   color: var(--gray-500);
 }
 
 @media (max-width: 768px) {
   .sales-list {
-    max-height: 500px;
+    max-height: 550px;
   }
 
   .sale-item {
-    padding: 0.75rem;
+    padding: 1rem;
+    gap: 1rem;
   }
 
   .sale-image {
-    width: 56px;
-    height: 56px;
+    width: 64px;
+    height: 64px;
   }
 
   .sale-placeholder {
-    font-size: 1.5rem;
+    font-size: 1.75rem;
   }
 
   .sale-name {
-    font-size: 0.9rem;
+    font-size: 0.9375rem;
   }
 
   .sale-price {
-    font-size: 1.125rem;
+    font-size: 1.25rem;
+  }
+  
+  .sale-delete-button {
+    width: 36px;
+    height: 36px;
   }
 }

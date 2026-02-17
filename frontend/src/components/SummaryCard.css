@@ -1,22 +1,49 @@
 .summary-card {
-  background: white;
-  border-radius: 12px;
-  padding: 1.5rem;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.85) 100%);
+  backdrop-filter: blur(10px);
+  border-radius: var(--radius-lg);
+  padding: 1.75rem;
   display: flex;
   align-items: center;
-  gap: 1rem;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  transition: transform 0.2s, box-shadow 0.2s;
+  gap: 1.25rem;
+  box-shadow: var(--shadow-md);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  transition: all var(--transition-base);
+  position: relative;
+  overflow: hidden;
+}
+
+.summary-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--primary), var(--secondary), var(--accent));
+  opacity: 0;
+  transition: opacity var(--transition-base);
 }
 
 .summary-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  transform: translateY(-4px) scale(1.02);
+  box-shadow: var(--shadow-xl);
+  border-color: rgba(255, 255, 255, 0.9);
+}
+
+.summary-card:hover::before {
+  opacity: 1;
 }
 
 .summary-icon {
-  font-size: 3rem;
+  font-size: 3.5rem;
   line-height: 1;
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.1));
+  transition: transform var(--transition-base);
+}
+
+.summary-card:hover .summary-icon {
+  transform: scale(1.1) rotate(5deg);
 }
 
 .summary-content {
@@ -26,27 +53,33 @@
 .summary-title {
   font-size: 0.875rem;
   color: var(--gray-600);
-  font-weight: 500;
-  margin-bottom: 0.25rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .summary-value {
-  font-size: 2rem;
-  font-weight: 700;
-  color: var(--gray-900);
+  font-size: 2.25rem;
+  font-weight: 800;
+  background: linear-gradient(135deg, var(--gray-900) 0%, var(--gray-700) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
   line-height: 1;
+  letter-spacing: -0.02em;
 }
 
 @media (max-width: 768px) {
   .summary-card {
-    padding: 1rem;
+    padding: 1.5rem;
   }
 
   .summary-icon {
-    font-size: 2.5rem;
+    font-size: 3rem;
   }
 
   .summary-value {
-    font-size: 1.75rem;
+    font-size: 2rem;
   }
 }

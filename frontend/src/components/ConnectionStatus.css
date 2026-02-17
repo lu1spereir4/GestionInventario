@@ -1,34 +1,78 @@
 .connection-status {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 1rem;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.1);
+  gap: 0.625rem;
+  padding: 0.625rem 1.25rem;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
   font-size: 0.875rem;
-  font-weight: 500;
+  font-weight: 600;
+  transition: all var(--transition-base);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.connection-status:hover {
+  background: rgba(255, 255, 255, 0.25);
+  transform: scale(1.05);
 }
 
 .status-dot {
   width: 10px;
   height: 10px;
   border-radius: 50%;
+  position: relative;
   animation: pulse 2s ease-in-out infinite;
+}
+
+.status-dot::before {
+  content: '';
+  position: absolute;
+  top: -3px;
+  left: -3px;
+  right: -3px;
+  bottom: -3px;
+  border-radius: 50%;
+  animation: ripple 2s ease-out infinite;
 }
 
 .connection-status.connected .status-dot {
   background: var(--success);
+  box-shadow: 0 0 8px var(--success);
+}
+
+.connection-status.connected .status-dot::before {
+  background: radial-gradient(circle, rgba(16, 185, 129, 0.4) 0%, rgba(16, 185, 129, 0) 70%);
 }
 
 .connection-status.disconnected .status-dot {
   background: var(--danger);
+  box-shadow: 0 0 8px var(--danger);
+}
+
+.connection-status.disconnected .status-dot::before {
+  background: radial-gradient(circle, rgba(239, 68, 68, 0.4) 0%, rgba(239, 68, 68, 0) 70%);
 }
 
 @keyframes pulse {
   0%, 100% {
     opacity: 1;
+    transform: scale(1);
   }
   50% {
-    opacity: 0.5;
+    opacity: 0.8;
+    transform: scale(1.1);
+  }
+}
+
+@keyframes ripple {
+  0% {
+    transform: scale(0.8);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1.5);
+    opacity: 0;
   }
 }

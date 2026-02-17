@@ -1,70 +1,128 @@
 ﻿.image-manager {
-  margin-top: 1.5rem;
-  padding: 1rem;
-  background: #f9fafb;
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
+  margin-top: 2rem;
+  padding: 1.75rem;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(249, 250, 251, 0.9) 100%);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(229, 231, 235, 0.6);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-md);
+  transition: all var(--transition-base);
+}
+
+.image-manager:hover {
+  border-color: var(--primary-light);
+  box-shadow: var(--shadow-lg);
+  transform: translateY(-2px);
 }
 
 .image-manager h2 {
-  font-size: 1.1rem;
-  margin-bottom: 1rem;
-  color: var(--gray-800);
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin-bottom: 1.25rem;
+  color: var(--gray-900);
+  letter-spacing: -0.01em;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.image-manager h2::before {
+  content: '📸';
+  font-size: 1.5rem;
 }
 
 .image-manager__form {
   display: flex;
   flex-wrap: wrap;
-  gap: 1rem;
+  gap: 1.25rem;
   align-items: flex-end;
 }
 
 .image-manager__form label {
   display: flex;
   flex-direction: column;
-  font-size: 0.9rem;
+  font-size: 0.9375rem;
+  font-weight: 600;
   color: var(--gray-700);
+  gap: 0.5rem;
 }
 
 .image-manager__form select,
-.image-manager__form input[type="file"] {
-  margin-top: 0.25rem;
-  padding: 0.5rem;
-  border-radius: 6px;
-  border: 1px solid #d1d5db;
-  min-width: 240px;
+.image-manager__form input[type=\"file\"] {
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-md);
+  border: 2px solid var(--gray-300);
+  min-width: 260px;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  transition: all var(--transition-base);
+  background: white;
+  color: var(--gray-900);
 }
 
-.image-manager__form button {
-  padding: 0.6rem 1.25rem;
-  border: none;
-  border-radius: 6px;
-  background: var(--primary);
-  color: #fff;
-  font-weight: 600;
+.image-manager__form select:focus,
+.image-manager__form input[type=\"file\"]:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.image-manager__form input[type=\"file\"] {
   cursor: pointer;
 }
 
+.image-manager__form button {
+  padding: 0.875rem 1.75rem;
+  border: none;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+  color: white;
+  font-weight: 700;
+  font-size: 0.9375rem;
+  cursor: pointer;
+  transition: all var(--transition-base);
+  box-shadow: var(--shadow-sm);
+  letter-spacing: 0.02em;
+}
+
 .image-manager__form button:hover {
-  background: var(--primary-dark);
+  background: linear-gradient(135deg, var(--primary-dark), #1e3a8a);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.image-manager__form button:active {
+  transform: translateY(0);
 }
 
 .image-manager__status {
-  margin-top: 0.75rem;
-  font-size: 0.9rem;
+  margin-top: 1rem;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-md);
+  animation: slideUp 0.3s ease-out;
 }
 
 .image-manager__status--success {
   color: var(--success);
+  background: linear-gradient(135deg, #d1fae5, #a7f3d0);
+  border: 1px solid var(--success);
 }
 
 .image-manager__status--error {
   color: var(--danger);
+  background: linear-gradient(135deg, #fee2e2, #fecaca);
+  border: 1px solid var(--danger);
 }
 
 @media (max-width: 768px) {
+  .image-manager {
+    padding: 1.5rem;
+  }
+
   .image-manager__form select,
-  .image-manager__form input[type="file"] {
+  .image-manager__form input[type=\"file\"] {
     min-width: 0;
     width: 100%;
   }

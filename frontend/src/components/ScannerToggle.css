@@ -1,31 +1,58 @@
 .scanner-toggle-container {
-  margin-bottom: 1.5rem;
+  margin-bottom: 2rem;
 }
 
 .toggle-scanner-btn {
-  background: white;
-  border: 2px dashed var(--gray-300);
-  color: var(--gray-600);
-  padding: 0.75rem 1.5rem;
-  border-radius: 8px;
-  font-size: 0.875rem;
-  font-weight: 600;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(249, 250, 251, 0.9) 100%);
+  backdrop-filter: blur(10px);
+  border: 2px dashed var(--primary-light);
+  color: var(--primary);
+  padding: 1rem 1.75rem;
+  border-radius: var(--radius-lg);
+  font-size: 0.9375rem;
+  font-weight: 700;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all var(--transition-base);
   width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  box-shadow: var(--shadow-sm);
 }
 
 .toggle-scanner-btn:hover {
   border-color: var(--primary);
-  color: var(--primary);
-  background: var(--gray-50);
+  border-style: solid;
+  color: var(--primary-dark);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 1) 0%, rgba(249, 250, 251, 1) 100%);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.toggle-scanner-btn:active {
+  transform: translateY(0);
 }
 
 .scanner-wrapper {
-  background: white;
-  border-radius: 12px;
-  padding: 1rem;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(10px);
+  border-radius: var(--radius-xl);
+  padding: 1.5rem;
+  box-shadow: var(--shadow-lg);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .scanner-header {
@@ -37,28 +64,34 @@
 
 .scanner-header h3 {
   margin: 0;
-  font-size: 1rem;
-  font-weight: 600;
-  color: var(--gray-800);
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: var(--gray-900);
+  letter-spacing: -0.01em;
 }
 
 .close-scanner-btn {
-  background: none;
+  background: var(--gray-100);
   border: none;
-  color: var(--gray-500);
-  font-size: 1.5rem;
+  color: var(--gray-600);
+  font-size: 1.25rem;
   cursor: pointer;
   padding: 0;
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 6px;
-  transition: all 0.2s;
+  border-radius: var(--radius-md);
+  transition: all var(--transition-fast);
 }
 
 .close-scanner-btn:hover {
-  background: var(--gray-100);
-  color: var(--gray-700);
+  background: var(--danger);
+  color: white;
+  transform: rotate(90deg) scale(1.1);
+}
+
+.close-scanner-btn:active {
+  transform: rotate(90deg) scale(0.95);
 }
