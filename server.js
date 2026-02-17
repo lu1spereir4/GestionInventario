@@ -24,6 +24,10 @@ import {
   getScanById,
   deleteScan,
   setRemoteSaleId,
+  getAnalyticsSummary,
+  getTopProduct,
+  getHourlyData,
+  getSalesForExport,
 } from './db.js';
 
 const app = express();
@@ -940,48 +944,36 @@ app.post('/api/set-variable-price', async (req, res) => {
 // Analytics endpoints
 app.get('/api/analytics/summary', (_req, res) => {
   try {
-    const db = getTodaySales()[0]?.constructor || require('better-sqlite3')('inventory-sync.db');
-    
     const today = new Date().toISOString().split('T')[0];
     
-    // Stats del día
-    const stats = db.prepare ? db.prepare(`
-      SELECT 
-        COUNT(*) as total_sales,
-        SUM(CASE WHEN status = 'synced' THEN 1 ELSE 0 END) as synced_count,
-        SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending_count,
-        SUM(value) as total_revenue,
-        AVG(value) as avg_sale
-      FROM scans 
-      WHERE DATE(timestamp) = ?
-    `).get(today) : null;
+    const stats = getAnalyticsSummary(today);
+    const topProduct = getTopProduct(today);
+    const hourlyData = getHourlyData(today);
     
-    // Producto más vendido
-    const topProduct = db.prepare ? db.prepare(`
-      SELECT barcode, product_name, COUNT(*) as count, SUM(value) as total
-      FROM scans
-      WHERE DATE(timestamp) = ?
-      GROUP BY barcode
-      ORDER BY count DESC
-      LIMIT 1
-    `).get(today) : null;
+    // Convertir centavos a pesos
+    const summary = stats ? {
+      total_sales: stats.total_sales || 0,
+      synced_count: stats.synced_count || 0,
+      pending_count: stats.pending_count || 0,
+      total_revenue: Math.round((stats.total_revenue_cents || 0) / 100),
+      avg_sale: Math.round((stats.avg_sale_cents || 0) / 100)
+    } : {};
     
-    // Ventas por hora
-    const hourlyData = db.prepare ? db.prepare(`
-      SELECT 
-        strftime('%H', timestamp) as hour,
-        COUNT(*) as count,
-        SUM(value) as total
-      FROM scans 
-      WHERE DATE(timestamp) = ?
-      GROUP BY hour
-      ORDER BY hour
-    `).all(today) : [];
+    const top = topProduct ? {
+      ...topProduct,
+      total: Math.round((topProduct.total_cents || 0) / 100)
+    } : null;
+    
+    const hourly = (hourlyData || []).map(h => ({
+      hour: h.hour,
+      count: h.count,
+      total: Math.round((h.total_cents || 0) / 100)
+    }));
     
     res.json({
-      summary: stats || {},
-      topProduct: topProduct || null,
-      hourlyData: hourlyData || []
+      summary,
+      topProduct: top,
+      hourlyData: hourly
     });
   } catch (error) {
     console.error('Error en analytics:', error);
@@ -995,30 +987,17 @@ app.get('/api/export/sales', (_req, res) => {
     const startDate = from || new Date().toISOString().split('T')[0];
     const endDate = to || startDate;
     
-    const db = getTodaySales()[0]?.constructor || require('better-sqlite3')('inventory-sync.db');
-    
-    const sales = db.prepare ? db.prepare(`
-      SELECT 
-        timestamp,
-        barcode,
-        product_name,
-        category,
-        value,
-        status
-      FROM scans
-      WHERE DATE(timestamp) BETWEEN ? AND ?
-      ORDER BY timestamp DESC
-    `).all(startDate, endDate) : getTodaySales();
+    const sales = getSalesForExport(startDate, endDate);
     
     // Convertir a CSV manualmente (simple)
     const headers = ['Fecha/Hora', 'Código', 'Producto', 'Categoría', 'Precio', 'Estado'];
     const rows = sales.map(s => [
-      s.timestamp,
-      s.barcode,
+      s.scanned_at || '',
+      s.barcode || '',
       s.product_name || '',
       s.category || '',
-      s.value || 0,
-      s.status
+      Math.round((s.price_cents || 0) / 100),
+      s.status || ''
     ]);
     
     const csvContent = [

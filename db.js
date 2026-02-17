@@ -274,4 +274,69 @@ export function setRemoteSaleId(id, remoteSaleId) {
   updateRemoteSaleIdStmt.run({ id, remoteSaleId });
 }
 
+// Analytics functions
+const analyticsSummaryStmt = db.prepare(`
+  SELECT 
+    COUNT(*) as total_sales,
+    SUM(CASE WHEN status = 'synced' THEN 1 ELSE 0 END) as synced_count,
+    SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending_count,
+    SUM(price_cents) as total_revenue_cents,
+    AVG(price_cents) as avg_sale_cents
+  FROM scans 
+  WHERE date(scanned_at) = ?
+`);
 
+const topProductStmt = db.prepare(`
+  SELECT barcode, product_name, COUNT(*) as count, SUM(price_cents) as total_cents
+  FROM scans
+  WHERE date(scanned_at) = ?
+  GROUP BY barcode
+  ORDER BY count DESC
+  LIMIT 1
+`);
+
+const hourlyDataStmt = db.prepare(`
+  SELECT 
+    CAST(strftime('%H', scanned_at) AS INTEGER) as hour,
+    COUNT(*) as count,
+    SUM(price_cents) as total_cents
+  FROM scans 
+  WHERE date(scanned_at) = ?
+  GROUP BY hour
+  ORDER BY hour
+`);
+
+const salesForExportStmt = db.prepare(`
+  SELECT 
+    scanned_at,
+    barcode,
+    product_name,
+    category,
+    price_cents,
+    status
+  FROM scans
+  WHERE date(scanned_at) BETWEEN ? AND ?
+  ORDER BY datetime(scanned_at) DESC
+`);
+
+export function getAnalyticsSummary(date = null) {
+  const targetDate = date || new Date().toISOString().split('T')[0];
+  return analyticsSummaryStmt.get(targetDate);
+}
+
+export function getTopProduct(date = null) {
+  const targetDate = date || new Date().toISOString().split('T')[0];
+  return topProductStmt.get(targetDate);
+}
+
+export function getHourlyData(date = null) {
+  const targetDate = date || new Date().toISOString().split('T')[0];
+  return hourlyDataStmt.all(targetDate);
+}
+
+export function getSalesForExport(fromDate = null, toDate = null) {
+  const today = new Date().toISOString().split('T')[0];
+  const start = fromDate || today;
+  const end = toDate || start;
+  return salesForExportStmt.all(start, end);
+}
