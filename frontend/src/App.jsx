@@ -14,7 +14,7 @@ import { useToast } from "./hooks/useToast";
 
 const SOCKET_URL = window.location.hostname === "localhost"
   ? "http://localhost:3001"
-  : `http://${window.location.hostname}:3001`;
+  : `https://${window.location.hostname}`;
 
 function App() {
   const [sales, setSales] = useState([]);
