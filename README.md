@@ -1,204 +1,292 @@
-# 🛒 Sistema de Gestión de Inventario
+# Inventory Management System — POS con Lector de Código de Barras
 
-Sistema de punto de venta con lector de códigos de barras diseñado para Raspberry Pi.
+![Node.js](https://img.shields.io/badge/Node.js-18+-339933?style=flat-square&logo=node.js&logoColor=white)
+![React](https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react&logoColor=black)
+![Vite](https://img.shields.io/badge/Vite-5-646CFF?style=flat-square&logo=vite&logoColor=white)
+![Socket.IO](https://img.shields.io/badge/Socket.IO-4-010101?style=flat-square&logo=socket.io&logoColor=white)
+![SQLite](https://img.shields.io/badge/SQLite-local--first-003B57?style=flat-square&logo=sqlite&logoColor=white)
+![Raspberry Pi](https://img.shields.io/badge/Raspberry%20Pi-3B+-A22846?style=flat-square&logo=raspberry-pi&logoColor=white)
+![License](https://img.shields.io/badge/License-ISC-blue?style=flat-square)
 
-## 📋 Características
+Sistema de punto de venta (POS) de producción diseñado para operar en hardware embebido (Raspberry Pi 3B+). Integra captura de códigos de barras por USB, sincronización con un backend central mediante REST + WebSocket, y una interfaz táctil optimizada para pantallas de bajo consumo.
 
-- ✅ **Escaneo automático** de productos con lector de códigos de barras
-- 📊 **Dashboard en tiempo real** con ventas del día
-- 💰 **Precios fijos y variables** según categoría de producto
-- 🔄 **Sincronización automática** con backend central
-- 📱 **Interfaz táctil** optimizada para Raspberry Pi
-- 🔌 **WebSocket** para actualizaciones en tiempo real
-- 💾 **Base de datos SQLite** local con sincronización diferida
+---
 
-## 🚀 Instalación
+## Tabla de Contenidos
 
-### Requisitos previos
+- [Motivación y Arquitectura](#motivación-y-arquitectura)
+- [Stack Tecnológico](#stack-tecnológico)
+- [Características](#características)
+- [Estructura del Proyecto](#estructura-del-proyecto)
+- [Inicio Rápido](#inicio-rápido)
+- [Configuración](#configuración)
+- [API Reference](#api-reference)
+- [Eventos WebSocket](#eventos-websocket)
+- [Despliegue en Producción (Raspberry Pi)](#despliegue-en-producción-raspberry-pi)
+- [Resolución de Problemas](#resolución-de-problemas)
+- [Seguridad](#seguridad)
 
-- Node.js 18+ instalado
-- Lector de códigos de barras USB
-- Conexión de red al servidor backend
+---
 
-### Paso 1: Instalar dependencias
+## Motivación y Arquitectura
 
-```bash
-npm run install-all
+El sistema resuelve el problema de operar un punto de venta en entornos con **conectividad intermitente**. En lugar de depender de una conexión permanente al backend, cada dispositivo mantiene una base de datos SQLite local que actúa como fuente de verdad inmediata, sincronizándose con el servidor central en segundo plano.
+
+```
+┌───────────────────────────────┐         ┌─────────────────────┐
+│        Raspberry Pi           │         │   Backend Central   │
+│                               │         │                     │
+│  ┌──────────┐  ┌───────────┐  │  REST   │  ┌─────────────┐   │
+│  │  Escáner │→ │ server.js │ ←┼────────→│  │   API /     │   │
+│  │  USB HID │  │ Express + │  │WebSocket│  │  inventario │   │
+│  └──────────┘  │ Socket.IO │  │         │  └─────────────┘   │
+│                └─────┬─────┘  │         └─────────────────────┘
+│                      │        │
+│               ┌──────▼──────┐ │
+│               │  SQLite DB  │ │
+│               │  (local)    │ │
+│               └─────────────┘ │
+│                               │
+│  ┌──────────────────────────┐ │
+│  │   React + Vite (kiosk)   │ │
+│  │   Chromium en modo kiosk │ │
+│  └──────────────────────────┘ │
+└───────────────────────────────┘
 ```
 
-Este comando instalará las dependencias tanto del backend como del frontend.
+---
 
-### Paso 2: Configurar el sistema
+## Stack Tecnológico
 
-Edita el archivo `sync.config.js` con tus configuraciones:
+| Capa | Tecnología | Propósito |
+|---|---|---|
+| **Backend** | Node.js 18 + Express 4 | Servidor HTTP y API REST |
+| **Tiempo real** | Socket.IO 4 | Push de eventos al frontend |
+| **Base de datos** | SQLite (`better-sqlite3`) | Persistencia local sin servidor |
+| **Frontend** | React 18 + Vite 5 | Interfaz táctil reactiva |
+| **Sincronización** | Axios + interval | Sync diferido con backend central |
+| **Hardware** | Raspberry Pi 3B+ | Dispositivo de despliegue objetivo |
+| **Entrada HID** | Node.js readline / USB | Captura del escáner de barras |
+| **Subida de imgs** | Multer | Imágenes de producto por producto |
 
-```javascript
-export default {
-  apiBase: 'http://192.168.1.47:3000/api/inventario', // URL de tu backend
-  deviceId: 'pi-almacen-01',                          // ID único del dispositivo
-  jwt: null,                                          // Token JWT si es necesario
-  codeLength: 12,                                     // Longitud de códigos de barras
-  syncIntervalMs: 60_000,                             // Intervalo de sincronización
-  dbFile: './inventory-sync.db'                       // Archivo de base de datos
-};
-```
+---
 
-## 🎯 Uso
+## Características
 
-### Desarrollo (Backend + Frontend)
+- **Escaneo USB automático** — captura eventos HID del lector sin depender de foco de teclado
+- **Dashboard en tiempo real** — ventas del día actualizadas vía WebSocket sin polling
+- **Soporte de precios variables** — modal para productos de precio libre (categoría "Varios")
+- **Sincronización diferida** — opera offline y sincroniza en cuanto hay conectividad
+- **Catálogo remoto** — descarga y cachea el catálogo desde el endpoint central
+- **Gestión de imágenes de producto** — carga, sirve y propaga imágenes vía WebSocket
+- **Interfaz kiosk** — UI táctil optimizada para pantallas pequeñas y uso continuo
+- **Inicio automático** — configuración lista para `systemd` + Chromium en modo kiosk
 
-Para ejecutar el sistema completo en modo desarrollo:
+---
 
-```bash
-npm run dev
-```
-
-Esto iniciará:
-- **Backend**: `http://localhost:3001`
-- **Frontend**: `http://localhost:5173`
-
-### Solo Backend (modo terminal)
-
-Para usar solo el ingestor original sin interfaz gráfica:
-
-```bash
-npm run ingestor
-```
-
-### Solo Servidor con API
-
-Para ejecutar solo el servidor con API y WebSocket:
-
-```bash
-npm run server
-```
-
-### Solo Frontend
-
-Para ejecutar solo el frontend (el backend debe estar corriendo):
-
-```bash
-npm run frontend
-```
-
-## 📱 Interfaz de Usuario
-
-### Panel Principal
-
-El dashboard muestra:
-
-1. **Indicador de conexión**: Estado de la conexión con el servidor
-2. **Resumen de ventas**: Total de productos y monto vendido del día
-3. **Lista de ventas**: Productos escaneados en tiempo real
-
-### Modal de Precio Variable
-
-Cuando se escanea un producto de categoría "Varios":
-
-1. Se abre automáticamente un modal
-2. Ingresar el precio manualmente o seleccionar un precio rápido
-3. Confirmar la venta
-
-## 🔧 Estructura del Proyecto
+## Estructura del Proyecto
 
 ```
 GestionInventario/
-├── server.js              # Servidor Express con WebSocket
-├── ingestor.js            # Ingestor original (modo terminal)
-├── barcodeScanner.js      # Módulo de escaneo de códigos
-├── db.js                  # Operaciones de base de datos SQLite
-├── sync.config.js         # Configuración del sistema
-├── package.json           # Dependencias del backend
-├── frontend/
-│   ├── src/
-│   │   ├── App.jsx        # Componente principal
-│   │   ├── components/
-│   │   │   ├── ConnectionStatus.jsx
-│   │   │   ├── SummaryCard.jsx
-│   │   │   ├── SalesList.jsx
-│   │   │   └── VariablePriceModal.jsx
-│   │   └── ...
-│   ├── package.json       # Dependencias del frontend
-│   └── vite.config.js     # Configuración de Vite
-└── README.md
+├── server.js              # Servidor principal: Express + Socket.IO + escáner USB
+├── server-no-scanner.js   # Variante sin hardware (desarrollo en PC)
+├── ingestor.js            # Modo CLI legacy (terminal sin interfaz gráfica)
+├── barcodeScanner.js      # Módulo de captura HID / readline
+├── usbScanner.js          # Detección y lectura directa del dispositivo USB
+├── db.js                  # DAL: operaciones SQLite (ventas, catálogo, imágenes)
+├── sync.config.js         # Configuración centralizada (URL backend, deviceId, JWT...)
+├── check-db.js            # Utilidad de inspección de la base de datos
+├── package.json
+└── frontend/
+    ├── vite.config.js
+    └── src/
+        ├── App.jsx                        # Componente raíz y orquestación de estado
+        └── components/
+            ├── ConnectionStatus.jsx       # Indicador de estado de conexión
+            ├── SummaryCard.jsx            # Totales del día (unidades + monto)
+            ├── SalesList.jsx              # Lista de ventas en tiempo real
+            ├── VariablePriceModel.jsx     # Modal de precio libre
+            ├── AnalyticsPanel.jsx         # Panel de métricas y tendencias
+            ├── ManualScanner.jsx          # Entrada manual de código de barras
+            ├── ProductImageManager.jsx    # Gestión de imágenes por producto
+            ├── ScanSimulator.jsx          # Simulador de escaneo (desarrollo)
+            ├── ScannerToggle.jsx          # Activar/desactivar escáner físico
+            ├── ConfirmDialog.jsx          # Diálogo de confirmación genérico
+            └── Toast.jsx                 # Notificaciones no bloqueantes
 ```
 
-## 🔌 API Endpoints
+---
 
-### GET `/api/sales/today`
+## Inicio Rápido
 
-Obtiene las ventas del día actual.
+### Prerequisitos
 
-**Respuesta:**
-```json
-{
-  "totalItems": 15,
-  "totalCents": 45000,
-  "sales": [...]
-}
-```
+- Node.js ≥ 18
+- npm ≥ 9
+- (Producción) Lector de códigos de barras USB HID
 
-### GET `/api/pending-variable-price`
-
-Obtiene el scan pendiente que requiere precio variable.
-
-### POST `/api/set-variable-price`
-
-Envía el precio para un producto de categoría "Varios".
-
-**Body:**
-```json
-{
-  "scanId": "uuid",
-  "priceCents": 1500
-}
-```
-
-## 📡 Eventos WebSocket
-
-### Cliente → Servidor
-
-No hay eventos enviados por el cliente (solo consume).
-
-### Servidor → Cliente
-
-- `connect`: Conexión establecida
-- `initial-data`: Datos iniciales al conectar
-- `scan-received`: Nuevo código escaneado
-- `sale-completed`: Venta confirmada
-- `variable-price-required`: Producto requiere precio manual
-- `sale-rejected`: Venta rechazada por el backend
-- `sync-error`: Error en sincronización
-
-## 🏗️ Producción en Raspberry Pi
-
-### 1. Clonar el repositorio
+### 1. Clonar e instalar
 
 ```bash
-cd ~
-git clone <tu-repositorio>
+git clone <url-del-repositorio>
 cd GestionInventario
-```
-
-### 2. Instalar dependencias
-
-```bash
 npm run install-all
 ```
 
-### 3. Construir el frontend
+### 2. Configurar
+
+Edita el archivo `sync.config.js` con tus parámetros:
+
+```js
+export default {
+  apiBase:        'http://192.168.1.47:3000/api/inventario', // URL del backend central
+  catalogEndpoint: 'http://192.168.1.47:3000/api/catalogo',  // Endpoint del catálogo
+  deviceId:       'pi-almacen-01',    // ID único del dispositivo (se envía en cada sync)
+  jwt:            null,               // Token JWT (opcional, ver sección Seguridad)
+  codeLength:     12,                 // Longitud esperada de los códigos de barras
+  syncIntervalMs: 60_000,             // Intervalo de sincronización en ms (60 s por defecto)
+  dbFile:         './inventory-sync.db'
+};
+```
+
+### 3. Ejecutar en desarrollo
 
 ```bash
+# Backend (sin escáner físico) + Frontend con hot-reload
+npm run dev
+```
+
+| Servicio | URL |
+|---|---|
+| Backend API | http://localhost:3001 |
+| Frontend (Vite) | http://localhost:5173 |
+
+### Scripts disponibles
+
+| Comando | Descripción |
+|---|---|
+| `npm run dev` | Backend sin escáner + frontend (desarrollo) |
+| `npm run dev-with-scanner` | Backend con escáner USB + frontend |
+| `npm run server` | Solo backend con escáner |
+| `npm run server-no-scanner` | Solo backend sin escáner |
+| `npm run frontend` | Solo frontend (requiere backend activo) |
+| `npm run build` | Build de producción del frontend |
+| `npm run ingestor` | Modo CLI legacy (sin interfaz) |
+| `npm run check-db` | Inspeccionar el estado de la base de datos |
+| `npm run clear-db` | Eliminar la base de datos local |
+
+---
+
+## Configuración
+
+Todos los parámetros del sistema se centralizan en `sync.config.js`:
+
+```js
+export default {
+  apiBase:         'http://192.168.1.47:3000/api/inventario',
+  catalogEndpoint: 'http://192.168.1.47:3000/api/catalogo',
+  deviceId:        'pi-almacen-01',   // ID único del dispositivo
+  jwt:             null,              // Token JWT (ver sección Seguridad)
+  codeLength:      12,
+  syncIntervalMs:  60_000,            // 60 segundos
+  dbFile:          './inventory-sync.db'
+};
+```
+
+---
+
+## API Reference
+
+### `GET /api/sales/today`
+
+Ventas registradas en el día actual.
+
+```jsonc
+// 200 OK
+{
+  "totalItems": 15,
+  "totalCents": 45000,
+  "sales": [
+    {
+      "id": "uuid",
+      "barcode": "750100012345",
+      "name": "Refresco 355ml",
+      "category": "bebida_latas",
+      "priceCents": 2500,
+      "createdAt": "2026-02-27T14:32:00.000Z"
+    }
+  ]
+}
+```
+
+### `GET /api/pending-variable-price`
+
+Retorna el scan pendiente que requiere asignación manual de precio (si existe).
+
+```jsonc
+// 200 OK — hay uno pendiente
+{ "scanId": "uuid", "barcode": "7501..." }
+
+// 200 OK — no hay pendientes
+{ "scanId": null }
+```
+
+### `POST /api/set-variable-price`
+
+Asigna precio a un producto de categoría variable y registra la venta.
+
+```jsonc
+// Body
+{ "scanId": "uuid", "priceCents": 1500 }
+
+// 200 OK
+{ "ok": true }
+```
+
+### `POST /api/images/:barcode`
+
+Sube una imagen para un producto. Acepta `multipart/form-data` con campo `image`.
+Las imágenes se almacenan en `public/images/` y se sirven bajo `/images/:filename`.
+
+---
+
+## Eventos WebSocket
+
+El servidor emite eventos a todos los clientes conectados en tiempo real.
+
+| Evento | Dirección | Payload | Descripción |
+|---|---|---|---|
+| `initial-data` | Server → Client | `{ sales, pendingVariablePrice }` | Datos iniciales al conectar |
+| `scan-received` | Server → Client | `{ barcode }` | Código escaneado recibido |
+| `sale-completed` | Server → Client | `Sale` | Venta confirmada con éxito |
+| `variable-price-required` | Server → Client | `{ scanId, barcode }` | Requiere precio manual |
+| `sale-rejected` | Server → Client | `{ reason }` | Venta rechazada por el backend |
+| `sync-error` | Server → Client | `{ message }` | Error en sincronización |
+| `image-updated` | Server → Client | `{ barcode, imageUrl }` | Nueva imagen disponible |
+
+> El cliente no emite eventos; consume el stream del servidor.
+
+---
+
+## Despliegue en Producción (Raspberry Pi)
+
+### 1. Preparar el dispositivo
+
+```bash
+cd ~
+git clone <url-del-repositorio> GestionInventario
+cd GestionInventario
+npm run install-all
 npm run build
 ```
 
-### 4. Configurar inicio automático
+### 2. Configurar servicio systemd
 
-Crear servicio systemd en `/etc/systemd/system/inventory.service`:
+Crear `/etc/systemd/system/inventory.service`:
 
 ```ini
 [Unit]
-Description=Sistema de Inventario
+Description=Sistema de Inventario POS
 After=network.target
 
 [Service]
@@ -207,100 +295,57 @@ User=pi
 WorkingDirectory=/home/pi/GestionInventario
 ExecStart=/usr/bin/node server.js
 Restart=always
+RestartSec=5
 Environment=NODE_ENV=production
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-Habilitar e iniciar el servicio:
-
 ```bash
 sudo systemctl enable inventory
 sudo systemctl start inventory
+sudo systemctl status inventory
 ```
 
-### 5. Configurar Chromium en modo kiosk
+### 3. Configurar Chromium en modo kiosk
 
 Editar `/etc/xdg/lxsession/LXDE-pi/autostart`:
 
 ```
-@chromium-browser --kiosk --noerrdialogs --disable-infobars http://localhost:3001
+@chromium-browser --kiosk --noerrdialogs --disable-infobars --disable-session-crashed-bubble http://localhost:3001
 ```
 
-## 🐛 Resolución de Problemas
+### 4. Verificar logs en tiempo real
 
-### El escáner no funciona
-
-- Verificar que el dispositivo USB esté conectado
-- Comprobar permisos: `ls -l /dev/input/`
-- El escáner debe estar configurado para enviar Enter después del código
-
-### No se conecta al backend
-
-- Verificar la URL en `sync.config.js`
-- Comprobar conectividad: `ping <ip-del-backend>`
-- Revisar logs del servidor backend
-
-### Frontend no carga
-
-- Verificar que el puerto 3001 esté abierto
-- Comprobar que el servidor esté corriendo: `ps aux | grep node`
-- Ver logs: `sudo journalctl -u inventory -f`
-
-## 📝 Logs
-
-Los logs del sistema se guardan en:
-
-- `synced.log`: Ventas sincronizadas exitosamente
-- `rejected.log`: Ventas rechazadas por el backend
-
-## 🔐 Seguridad
-
-Para proteger la API:
-
-1. Configurar JWT en `sync.config.js`
-2. El token se incluirá automáticamente en las peticiones
-3. El backend debe validar el token en cada request
-
-## 🎨 Personalización
-
-### Modificar categorías de productos
-
-Editar emojis en `frontend/src/components/SalesList.jsx`:
-
-```javascript
-const getCategoryEmoji = (category) => {
-  const emojis = {
-    'bebida_latas': '🥤',
-    'pasteleria': '🧁',
-    // ... agregar más categorías
-  };
-  return emojis[category] || '📦';
-};
+```bash
+sudo journalctl -u inventory -f
 ```
 
-### Ajustar precios rápidos
+---
 
-Editar en `frontend/src/components/VariablePriceModal.jsx`:
+## Resolución de Problemas
 
-```javascript
-{[0.50, 1.00, 2.00, 5.00, 10.00, 20.00].map((amount) => (
-  // ... modificar montos
-))}
-```
+| Síntoma | Causa probable | Solución |
+|---|---|---|
+| Escáner no detectado | Permisos del dispositivo USB | `ls -l /dev/input/` y verificar grupo `input` |
+| No conecta al backend | URL incorrecta o red caída | Revisar `sync.config.js` y hacer `ping <ip-backend>` |
+| Frontend no carga | Puerto 3001 bloqueado o servidor caído | `ps aux \| grep node` y `sudo journalctl -u inventory` |
+| Imágenes no aparecen | Directorio `public/images` sin permisos | `chmod -R 755 public/` |
 
-## 📄 Licencia
+---
 
-ISC
+## Seguridad
 
-## 👨‍💻 Soporte
+El sistema soporta autenticación JWT para la sincronización con el backend:
 
-Para problemas o preguntas, crear un issue en el repositorio.
+1. Establecer el token en `sync.config.js` → campo `jwt`
+2. El token se adjunta automáticamente como `Authorization: Bearer <token>` en cada petición de sincronización
+3. El backend central es responsable de validar y rotar el token
 
-## Cat�logo e im�genes
+---
 
-- El backend sincroniza el cat�logo desde el endpoint configurado en `sync.config.js` (`catalogEndpoint`).
-- Cuando se escanea un c�digo, el sistema completa autom�ticamente nombre, categor�a y precio por defecto.
-- Puedes subir im�genes para cada producto desde la interfaz (`Cargar imagen de producto`). Los archivos quedan en `public/images` y se sirven bajo `/images/...`.
-- Las im�genes y metadatos se comparten autom�ticamente con el dashboard v�a WebSocket.
+## Licencia
+
+[ISC](https://opensource.org/licenses/ISC) © 2026
+
